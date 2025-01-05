@@ -1,11 +1,112 @@
-### Code Visualizer:
+# Code Timeline Preview
 
-**Transforming Code into Engaging Visual Timelines**
+A modern, interactive code visualization tool that helps developers understand and analyze code structure and complexity over time.
 
-Code Visualizer is a web application that generates colorful visualizations from code inputs, highlighting different segments for improved readability and engagement.
+## Live Demo
+
+Try out the live demo at: [codevi.netlify.app](https://codevi.netlify.app/)
 
 <img src='./public/thumbnail.png' alt='Thumbnail' height=500/>
 
-Find Code Visualizer at the following URL:
+## Features
 
-[codevi.netlify.com](https://codevi.netlify.app/)<br>
+### Core Visualization
+- **Interactive Timeline**: Visualize code structure with an intuitive timeline interface
+- **Syntax Highlighting**: Clear color-coding for different code elements:
+  - Keywords (Deep Red)
+  - Classes (Rich Green)
+  - Functions (Deep Purple)
+  - Variables (Rich Blue)
+  - Operators (Warm Orange)
+  - Strings (Ocean Blue)
+  - Numbers (Ruby Red)
+  - Comments (Neutral Gray)
+  - Decorators (Bright Orange)
+
+### Code Analysis
+- **Complexity Visualization**: Toggle between syntax highlighting and complexity view
+- **Complexity Metrics**:
+  - Low Complexity (Green): Simple, straightforward code
+  - Medium Complexity (Yellow): Moderate control flow and nesting
+  - High Complexity (Red): Complex logic and deep nesting
+- **Code Structure Analysis**: Automatic analysis of:
+  - Control flow statements
+  - Nesting levels
+  - Logical operators
+  - Dependencies
+
+### Navigation & Controls
+- **Search Functionality**: Filter code segments based on text search
+- **Filter Dialog**: Show/hide specific code types:
+  - Keywords
+  - Classes
+  - Functions
+  - Variables
+  - Operators
+  - Strings
+  - Numbers
+  - Comments
+- **Zoom Controls**: Adjust timeline view scale
+- **Mini-map Navigation**: Quick navigation through large codebases with visual preview
+- **Scrolling**: Smooth scrolling with proper viewport management
+
+### UI Features
+- **Dark/Light Mode**: Optimized color schemes for both themes
+- **Responsive Layout**: Adapts to different screen sizes
+- **Interactive Tooltips**: Detailed information on hover
+- **Modern Design**:
+  - Clean, minimalist interface
+  - Subtle shadows and transitions
+  - Professional color palette
+  - High contrast for readability
+
+### Editor Integration
+- **Code Input**: Built-in code editor with syntax highlighting
+- **Real-time Updates**: Immediate visualization of code changes
+- **Error Handling**: Validation and error reporting for code input
+
+## Getting Started
+
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/code_timeline_preview.git
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Run the development server:
+```bash
+npm run dev
+```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+## Usage
+
+1. **Input Code**: Paste your code in the left editor panel
+2. **Explore Visualization**: 
+   - Use the timeline view on the right
+   - Toggle between syntax and complexity views
+   - Use search and filters to focus on specific code elements
+3. **Navigate**: 
+   - Use the mini-map for quick navigation
+   - Zoom in/out to adjust detail level
+   - Scroll through longer code files
+
+## Technologies
+
+- **Frontend**: Next.js, React
+- **Styling**: Tailwind CSS
+- **Code Editor**: Ace Editor
+- **Icons**: Lucide React
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
