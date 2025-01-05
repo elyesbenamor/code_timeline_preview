@@ -1,17 +1,10 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown, Sun, Moon } from "lucide-react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown, Sun, Moon, History, Trash2, X, Share2, AlertTriangle } from "lucide-react";
 import html2canvas from "html2canvas";
 import AceEditor from "react-ace";
 import { validateCodeInput, parseCodeChanges, getTokenType } from "@/lib/utils";
-import { analyzeCodeSegment, getComplexityColor } from "@/lib/analysis";
-import { Alert } from "@/components/ui/alert";
-import { TimelineControls } from "@/components/ui/timeline-controls";
-import { FilterDialog } from "@/components/ui/filter-dialog";
-import { MiniMap } from "@/components/ui/mini-map";
-import { FileUpload } from "@/components/ui/file-upload";
-import { DiffModal } from "@/components/ui/diff-modal";
 import jsPDF from 'jspdf';
 
 import "ace-builds/src-noconflict/mode-dart";
@@ -27,14 +20,15 @@ const CodeTimeline = () => {
     return stored ? JSON.parse(stored) : defaultValue;
   };
 
-  const [darkMode, setDarkMode] = useState(() => loadFromStorage('darkMode', true));
-  const [codeInput, setCodeInput] = useState("");
-  const [timelineData, setTimelineData] = useState(() => loadFromStorage('timelineData', []));
+  const [mounted, setMounted] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [timelineData, setTimelineData] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState(null);
-  const [zoom, setZoom] = useState(1);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [showComplexity, setShowComplexity] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 0 });
   const [filters, setFilters] = useState({
     keyword: true,
     class: true,
@@ -47,192 +41,294 @@ const CodeTimeline = () => {
     comment: true,
     decorator: true,
     bracket: true,
-    punctuation: true,
+    punctuation: true
   });
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
-  const [tooltipPosition, setTooltipPosition] = useState({ top: true });
-  const [tooltipVisible, setTooltipVisible] = useState(false);
-  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState(null);
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Initialize state from localStorage after mount
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const savedDarkMode = localStorage.getItem('darkMode');
+      const savedTimelineData = localStorage.getItem('timelineData');
+      const savedHistory = localStorage.getItem('codeHistory');
+
+      if (savedDarkMode !== null) {
+        setDarkMode(JSON.parse(savedDarkMode));
+      }
+      if (savedTimelineData) {
+        setTimelineData(JSON.parse(savedTimelineData));
+      }
+      if (savedHistory) {
+        setHistory(JSON.parse(savedHistory));
+      }
+    } catch (error) {
+      console.error('Error loading saved data:', error);
+    }
+  }, []);
+
+  // Save state to localStorage
+  useEffect(() => {
+    if (!mounted) return;
+    
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+    localStorage.setItem('timelineData', JSON.stringify(timelineData));
+    localStorage.setItem('codeHistory', JSON.stringify(history));
+  }, [darkMode, timelineData, history, mounted]);
 
   const timelineRef = useRef(null);
   const timelineContainerRef = useRef(null);
   const tooltipRef = useRef(null);
 
-  // Theme configurations
-  const themes = {
-    dark: {
-      name: 'Dark',
-      background: '#1a1b26',
-      surface: '#24283b',
-      border: '#414868',
-      text: {
-        primary: '#c0caf5',
-        secondary: '#a9b1d6',
-        muted: '#565f89'
-      },
-      syntax: {
-        keyword: '#ff7b72',
-        class: '#7ee787',
-        function: '#d2a8ff',
-        variable: '#79c0ff',
-        operator: '#ffb757',
-        string: '#a5d6ff',
-        number: '#ffa657',
-        boolean: '#ff7b72',
-        comment: '#8b949e',
-        decorator: '#ffa657',
-        bracket: '#8b949e',
-        punctuation: '#8b949e'
-      },
-      complexity: {
-        low: '#4ade80',
-        medium: '#facc15',
-        high: '#fb923c',
-        veryHigh: '#f87171',
-        extreme: '#ef4444'
-      },
-      accent: '#7aa2f7',
-      hover: 'rgba(122, 162, 247, 0.1)',
-      shadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+  const theme = {
+    background: darkMode ? '#1a1a1a' : '#ffffff',
+    surface: darkMode ? '#2d2d2d' : '#f8f9fa',
+    text: {
+      primary: darkMode ? '#ffffff' : '#000000',
+      secondary: darkMode ? '#a0aec0' : '#4a5568',
     },
-    light: {
-      name: 'Light',
-      background: '#ffffff',
-      surface: '#f8fafc',
-      border: '#e2e8f0',
-      text: {
-        primary: '#1e293b',
-        secondary: '#475569',
-        muted: '#94a3b8'
-      },
-      syntax: {
-        keyword: '#d32f2f',
-        class: '#2e7d32',
-        function: '#6200ea',
-        variable: '#0277bd',
-        operator: '#f57c00',
-        string: '#0277bd',
-        number: '#c62828',
-        boolean: '#d32f2f',
-        comment: '#757575',
-        decorator: '#f57c00',
-        bracket: '#546e7a',
-        punctuation: '#546e7a'
-      },
-      complexity: {
-        low: '#4ade80',
-        medium: '#facc15',
-        high: '#fb923c',
-        veryHigh: '#f87171',
-        extreme: '#ef4444'
-      },
-      accent: '#2563eb',
-      hover: 'rgba(37, 99, 235, 0.1)',
-      shadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+    border: darkMode ? '#404040' : '#e2e8f0',
+    accent: '#3182ce',
+    severity: {
+      low: '#48bb78',
+      medium: '#ecc94b',
+      high: '#e53e3e',
+    },
+    complexity: {
+      low: '#48bb78',
+      medium: '#ecc94b',
+      high: '#e53e3e',
     }
   };
 
-  // Custom theme hook
-  const useTheme = (darkMode) => {
-    const theme = darkMode ? themes.dark : themes.light;
-    
-    return {
-      ...theme,
-      // Helper functions
-      getElementColor: (type) => theme.syntax[type] || theme.text.primary,
-      getComplexityColor: (complexity) => {
-        if (complexity <= 2) return theme.complexity.low;
-        if (complexity <= 4) return theme.complexity.medium;
-        if (complexity <= 6) return theme.complexity.high;
-        if (complexity <= 8) return theme.complexity.veryHigh;
-        return theme.complexity.extreme;
-      }
-    };
-  };
-
-  const theme = useTheme(darkMode);
-
   const elementTypes = {
-    keyword: theme.syntax.keyword,
-    class: theme.syntax.class,
-    function: theme.syntax.function,
-    variable: theme.syntax.variable,
-    operator: theme.syntax.operator,
-    string: theme.syntax.string,
-    number: theme.syntax.number,
-    boolean: theme.syntax.boolean,
-    comment: theme.syntax.comment,
-    decorator: theme.syntax.decorator,
-    bracket: theme.syntax.bracket,
-    punctuation: theme.syntax.punctuation,
-    default: theme.text.primary,
-    space: 'transparent'
-  };
-
-  const getSegmentHeight = (complexity) => {
-    // Scale height based on complexity
-    const baseHeight = 16;
-    return Math.min(baseHeight + (complexity * 2), 40);
+    keyword: '#c678dd',
+    string: '#98c379',
+    number: '#d19a66',
+    comment: '#5c6370',
+    operator: '#56b6c2',
+    bracket: '#abb2bf',
+    punctuation: '#abb2bf',
+    variable: '#e06c75',
+    function: '#61afef',
+    class: '#e5c07b',
+    default: darkMode ? '#abb2bf' : '#383a42',
+    space: 'transparent',
   };
 
   const getSegmentColor = (segment, analysis) => {
-    if (segment.color === 'transparent') return 'transparent';
-    
     if (showComplexity) {
-      return theme.getComplexityColor(analysis.complexity);
+      const complexity = analysis.complexity || 0;
+      if (complexity > 0.7) return theme.severity.high;
+      if (complexity > 0.4) return theme.severity.medium;
+      return theme.severity.low;
     }
-    return segment.color;
+    return elementTypes[segment.type] || elementTypes.default;
   };
 
   const getSegmentOpacity = (analysis) => {
     if (showComplexity) {
-      // Scale opacity with complexity
-      return Math.min(0.4 + (analysis.complexity * 0.1), 1);
+      const complexity = analysis.complexity || 0;
+      return 0.3 + (complexity * 0.7);
     }
     return 1;
   };
 
-  const handleCodeInput = (value) => {
-    setCodeInput(value);
-    setError(null);
-    try {
-      validateCodeInput(value);
-      const lines = parseCodeChanges(value);
-      const newTimelineData = lines.map((line, index) => {
-        const analysis = analyzeCodeSegment(line);
-        return {
-          id: index + 1,
-          complexity: analysis.complexity,
-          segments: line.split(/(\s+|[{}()[\],;.])/)
-            .map(token => {
-              if (!token) return null;
-              
-              if (token.trim() === "") {
-                return {
-                  text: token,
-                  color: "transparent",
-                  width: token.length * 8,
-                };
-              }
-
-              const type = getTokenType(token);
-              return {
-                text: token,
-                type,
-                color: elementTypes[type] || elementTypes.default,
-                width: token.length * 8,
-              };
-            })
-            .filter(Boolean)
-        };
-      });
-      setTimelineData(newTimelineData);
-    } catch (err) {
-      setError(err.message);
-    }
+  const getSegmentHeight = (complexity) => {
+    const minHeight = 20;
+    const maxHeight = 40;
+    return minHeight + (complexity * (maxHeight - minHeight));
   };
+
+  const getSegmentWidth = (text) => {
+    const baseWidth = 12;
+    return text.length * baseWidth;
+  };
+
+  const analyzeCodeSegment = (code) => {
+    if (!code) return { complexity: 0, codeSmells: [] };
+
+    let complexity = 0;
+    const codeSmells = [];
+
+    // Complexity factors
+    const keywordComplexity = (code.match(/\b(if|else|for|while|switch|case|try|catch)\b/g) || []).length * 0.1;
+    const operatorComplexity = (code.match(/[&|=!<>+\-*/%]+/g) || []).length * 0.05;
+    const nestingComplexity = (code.match(/[{[(]/g) || []).length * 0.1;
+    const lengthComplexity = Math.min(code.length / 100, 0.5);
+
+    complexity = keywordComplexity + operatorComplexity + nestingComplexity + lengthComplexity;
+
+    // Code smells detection
+    if (code.length > 80) {
+      codeSmells.push({ message: 'Line is too long (> 80 characters)' });
+    }
+    if ((code.match(/\t/g) || []).length > 0) {
+      codeSmells.push({ message: 'Uses tabs instead of spaces' });
+    }
+    if (code.match(/console\.(log|debug|info)/)) {
+      codeSmells.push({ message: 'Contains console statement' });
+    }
+    if (code.match(/var\s/)) {
+      codeSmells.push({ message: 'Uses var instead of const/let' });
+    }
+
+    return {
+      complexity: Math.min(complexity, 1),
+      codeSmells
+    };
+  };
+
+  const handleDelete = useCallback(() => {
+    setTimelineData([]);
+    setCodeInput('');
+    addToHistory(codeInput, 'deleted');
+  }, [codeInput]);
+
+  const parseCodeChanges = (code) => {
+    if (!code) return [];
+    
+    const lines = code.split('\n');
+    return lines.map((line, index) => {
+      const tokens = tokenizeLine(line);
+      return {
+        id: index + 1,
+        segments: tokens.map(token => ({
+          text: token.text,
+          type: token.type,
+          width: getSegmentWidth(token.text)
+        }))
+      };
+    });
+  };
+
+  const tokenizeLine = (line) => {
+    if (!line) return [];
+
+    const tokens = [];
+    let currentToken = '';
+    let currentType = 'default';
+
+    const addToken = (text, type) => {
+      if (text) {
+        tokens.push({ text, type });
+      }
+    };
+
+    const isKeyword = (word) => {
+      const keywords = ['function', 'const', 'let', 'var', 'if', 'else', 'return', 'for', 'while', 'class', 'import', 'export', 'default', 'try', 'catch'];
+      return keywords.includes(word);
+    };
+
+    const isOperator = (char) => {
+      return '+-*/%=<>!&|^~'.includes(char);
+    };
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+
+      if (char === ' ' || char === '\t') {
+        addToken(currentToken, currentType);
+        addToken(char, 'space');
+        currentToken = '';
+        currentType = 'default';
+        continue;
+      }
+
+      if (char === '"' || char === "'") {
+        addToken(currentToken, currentType);
+        currentToken = char;
+        let j = i + 1;
+        while (j < line.length && line[j] !== char) {
+          currentToken += line[j];
+          j++;
+        }
+        if (j < line.length) {
+          currentToken += line[j];
+        }
+        addToken(currentToken, 'string');
+        i = j;
+        currentToken = '';
+        currentType = 'default';
+        continue;
+      }
+
+      if (char === '/' && i + 1 < line.length && line[i + 1] === '/') {
+        addToken(currentToken, currentType);
+        addToken(line.slice(i), 'comment');
+        break;
+      }
+
+      if ('(){}[]'.includes(char)) {
+        addToken(currentToken, currentType);
+        addToken(char, 'bracket');
+        currentToken = '';
+        currentType = 'default';
+        continue;
+      }
+
+      if ('.,:;'.includes(char)) {
+        addToken(currentToken, currentType);
+        addToken(char, 'punctuation');
+        currentToken = '';
+        currentType = 'default';
+        continue;
+      }
+
+      if (isOperator(char)) {
+        addToken(currentToken, currentType);
+        currentToken = char;
+        while (i + 1 < line.length && isOperator(line[i + 1])) {
+          i++;
+          currentToken += line[i];
+        }
+        addToken(currentToken, 'operator');
+        currentToken = '';
+        currentType = 'default';
+        continue;
+      }
+
+      if (/[0-9]/.test(char)) {
+        if (currentType !== 'number') {
+          addToken(currentToken, currentType);
+          currentToken = '';
+          currentType = 'number';
+        }
+      } else if (/[a-zA-Z_$]/.test(char)) {
+        if (currentType !== 'variable' && currentType !== 'keyword') {
+          addToken(currentToken, currentType);
+          currentToken = '';
+          currentType = 'variable';
+        }
+      } else {
+        if (currentType !== 'default') {
+          addToken(currentToken, currentType);
+          currentToken = '';
+          currentType = 'default';
+        }
+      }
+
+      currentToken += char;
+
+      if (currentType === 'variable' && isKeyword(currentToken)) {
+        currentType = 'keyword';
+      }
+    }
+
+    addToken(currentToken, currentType);
+    return tokens;
+  };
+
+  const handleCodeInput = useCallback((value) => {
+    setCodeInput(value);
+    const newTimelineData = parseCodeChanges(value);
+    console.log('New timeline data:', newTimelineData); // Debug log
+    setTimelineData(newTimelineData);
+  }, []);
 
   const handleSearch = (term) => {
     setSearchTerm(term);
@@ -250,238 +346,72 @@ const CodeTimeline = () => {
     setFilters(newFilters);
   };
 
+  // Filter timeline data based on search term and filters
   const filteredTimelineData = useMemo(() => {
+    if (!timelineData || !Array.isArray(timelineData)) return [];
+    
     return timelineData
+      .filter(row => row && Array.isArray(row.segments))
       .map(row => ({
         ...row,
         segments: row.segments.filter(segment => {
+          if (!segment || !segment.type) return false;
           const type = segment.type;
           return filters[type] && 
             (!searchTerm || segment.text.toLowerCase().includes(searchTerm.toLowerCase()));
         })
       }))
       .filter(row => row.segments.length > 0);
-  }, [timelineData, filters, searchTerm]);
+  }, [timelineData, searchTerm, filters]);
 
-  const exportFormats = [
-    { 
-      id: 'png-hq', 
-      label: 'PNG (High Quality)', 
-      handler: () => exportAsPNG({ scale: 3, quality: 1 }) 
-    },
-    { 
-      id: 'png', 
-      label: 'PNG (Standard)', 
-      handler: () => exportAsPNG({ scale: 2, quality: 0.9 }) 
-    },
-    { 
-      id: 'jpeg-hq', 
-      label: 'JPEG (High Quality)', 
-      handler: () => exportAsJPEG({ quality: 1, scale: 3 }) 
-    },
-    { 
-      id: 'jpeg', 
-      label: 'JPEG (Compressed)', 
-      handler: () => exportAsJPEG({ quality: 0.8, scale: 2 }) 
-    },
-    { 
-      id: 'pdf-hq', 
-      label: 'PDF (High Quality)', 
-      handler: () => exportAsPDF({ scale: 3, compress: false }) 
-    },
-    { 
-      id: 'pdf', 
-      label: 'PDF (Compressed)', 
-      handler: () => exportAsPDF({ scale: 2, compress: true }) 
-    },
-    { 
-      id: 'svg', 
-      label: 'SVG Vector', 
-      handler: exportAsSVG 
-    },
-    { 
-      id: 'html', 
-      label: 'HTML Document', 
-      handler: exportAsHTML 
-    },
-    { 
-      id: 'json', 
-      label: 'JSON Data', 
-      handler: exportAsJSON 
-    }
-  ];
-
-  async function exportAsPNG({ scale = 2, quality = 0.9 }) {
+  const handleDownload = async () => {
     try {
-      const element = timelineRef.current;
-      if (!element) return;
+      // Get the timeline element
+      const timelineElement = timelineRef.current;
+      if (!timelineElement) return;
 
-      const canvas = await html2canvas(element, {
-        backgroundColor: theme.background,
-        scale: scale,
-        useCORS: true,
-        logging: false,
-        allowTaint: true,
-        imageTimeout: 0,
-        removeContainer: true
-      });
+      // Use html2canvas to create an image
+      const canvas = await html2canvas(timelineElement);
       
-      const dataUrl = canvas.toDataURL('image/png', quality);
-      const link = document.createElement('a');
-      link.download = `code-timeline-${scale}x.png`;
-      link.href = dataUrl;
-      link.click();
+      // Convert canvas to blob
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        
+        // Create download link
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'code-timeline.png';
+        
+        // Trigger download
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Cleanup
+        URL.revokeObjectURL(url);
+      }, 'image/png');
     } catch (error) {
-      console.error('Error exporting as PNG:', error);
+      console.error('Error downloading timeline:', error);
     }
-  }
+  };
 
-  async function exportAsJPEG({ quality = 0.9, scale = 2 }) {
-    try {
-      const element = timelineRef.current;
-      if (!element) return;
+  const handleFileUpload = useCallback((event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
 
-      const canvas = await html2canvas(element, {
-        backgroundColor: theme.background,
-        scale: scale,
-        useCORS: true,
-        logging: false,
-        allowTaint: true,
-        imageTimeout: 0
-      });
-      
-      const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      const link = document.createElement('a');
-      link.download = `code-timeline-${quality * 100}q.jpg`;
-      link.href = dataUrl;
-      link.click();
-    } catch (error) {
-      console.error('Error exporting as JPEG:', error);
-    }
-  }
-
-  async function exportAsPDF({ scale = 2, compress = true }) {
-    try {
-      const element = timelineRef.current;
-      if (!element) return;
-
-      const canvas = await html2canvas(element, {
-        backgroundColor: theme.background,
-        scale: scale,
-        useCORS: true,
-        logging: false,
-        allowTaint: true
-      });
-      
-      const imgData = canvas.toDataURL('image/jpeg', compress ? 0.8 : 1);
-      
-      // Calculate optimal page size
-      const pageWidth = canvas.width;
-      const pageHeight = canvas.height;
-      const pdf = new jsPDF({
-        orientation: pageWidth > pageHeight ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [pageWidth, pageHeight],
-        compress: compress
-      });
-      
-      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
-      pdf.save(`code-timeline-${compress ? 'compressed' : 'hq'}.pdf`);
-    } catch (error) {
-      console.error('Error exporting as PDF:', error);
-    }
-  }
-
-  async function exportAsHTML() {
-    try {
-      const element = timelineRef.current;
-      if (!element) return;
-      
-      // Create a full HTML document with styles
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Code Timeline Export</title>
-          <style>
-            ${Array.from(document.styleSheets)
-              .map(sheet => {
-                try {
-                  return Array.from(sheet.cssRules)
-                    .map(rule => rule.cssText)
-                    .join('\n');
-                } catch (e) {
-                  return '';
-                }
-              })
-              .join('\n')}
-          </style>
-        </head>
-        <body style="background: ${theme.background}">
-          ${element.outerHTML}
-        </body>
-        </html>
-      `;
-      
-      const blob = new Blob([html], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = 'code-timeline.html';
-      link.href = url;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting as HTML:', error);
-    }
-  }
-
-  async function exportAsJSON() {
-    try {
-      const data = {
-        timeline: timelineData,
-        metadata: {
-          darkMode,
-          filters,
-          exportDate: new Date().toISOString(),
-          version: '1.0'
-        }
-      };
-      
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.download = 'code-timeline.json';
-      link.href = url;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting as JSON:', error);
-    }
-  }
-
-  async function exportAsSVG() {
-    try {
-      const element = timelineRef.current;
-      if (!element) return;
-      
-      const clone = element.cloneNode(true);
-      const serializer = new XMLSerializer();
-      const svgString = serializer.serializeToString(clone);
-      
-      const blob = new Blob([svgString], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.download = 'code-timeline.svg';
-      link.href = url;
-      link.click();
-      
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting as SVG:', error);
-    }
-  }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result;
+      if (typeof content === 'string') {
+        setCodeInput(content);
+        const newTimelineData = parseCodeChanges(content);
+        setTimelineData(newTimelineData);
+        localStorage.setItem('timelineData', JSON.stringify(newTimelineData));
+      }
+    };
+    reader.readAsText(file);
+  }, []);
 
   const handleScroll = () => {
     if (!timelineContainerRef.current) return;
@@ -509,6 +439,16 @@ const CodeTimeline = () => {
   };
 
   useEffect(() => {
+    const timeline = timelineRef.current;
+    if (timeline) {
+      timeline.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        timeline.scrollTop += e.deltaY;
+      }, { passive: false });
+    }
+  }, []);
+
+  useEffect(() => {
     const container = timelineContainerRef.current;
     if (container) {
       container.addEventListener('scroll', handleScroll);
@@ -522,458 +462,709 @@ const CodeTimeline = () => {
     handleScroll();
   }, [zoom]);
 
-  // Save to localStorage when state changes
-  useEffect(() => {
-    localStorage.setItem('darkMode', JSON.stringify(darkMode));
-  }, [darkMode]);
+  // History management
+  const addToHistory = (code, type = 'deleted') => {
+    const newHistoryEntry = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      code,
+      type,
+      timelineData: timelineData
+    };
+    
+    setHistory(prevHistory => {
+      const updatedHistory = [newHistoryEntry, ...prevHistory].slice(0, 50);
+      localStorage.setItem('codeHistory', JSON.stringify(updatedHistory));
+      return updatedHistory;
+    });
+  };
 
-  useEffect(() => {
-    localStorage.setItem('timelineData', JSON.stringify(timelineData));
-  }, [timelineData]);
-
-  // Clear all timeline data and code input
-  const handleClearTimeline = () => {
-    if (window.confirm('Are you sure you want to clear all code snippets and editor content?')) {
-      setTimelineData([]);
-      setCodeInput('');
-      setError(null);
-      localStorage.removeItem('timelineData');
-      localStorage.removeItem('codeInput');
+  const restoreFromHistory = (entry) => {
+    if (window.confirm('This will replace your current code. Continue?')) {
+      setCodeInput(entry.code);
+      setTimelineData(entry.timelineData);
+      setShowHistory(false);
     }
+  };
+
+  const clearHistory = () => {
+    if (window.confirm('Are you sure you want to clear all history?')) {
+      setHistory([]);
+      localStorage.removeItem('codeHistory');
+    }
+  };
+
+  const FilterDialog = ({ isOpen, onClose, onApply, filters, darkMode }) => {
+    if (!isOpen) return null;
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        onClick={onClose}
+      >
+        <div
+          className={`w-96 p-6 rounded-lg ${
+            darkMode ? "bg-gray-800" : "bg-white"
+          }`}
+          onClick={e => e.stopPropagation()}
+        >
+          <h3 className={`text-lg font-semibold mb-4 ${
+            darkMode ? "text-white" : "text-gray-800"
+          }`}>
+            Filter Code Elements
+          </h3>
+          
+          <div className="space-y-3">
+            {Object.entries(filters).map(([key, value]) => (
+              <label key={key} className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={value}
+                  onChange={(e) => {
+                    onApply({ ...filters, [key]: e.target.checked });
+                  }}
+                  className="mr-2"
+                />
+                <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                  {key.charAt(0).toUpperCase() + key.slice(1)}
+                </span>
+              </label>
+            ))}
+          </div>
+          
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={onClose}
+              className={`px-4 py-2 rounded ${
+                darkMode
+                  ? "bg-gray-700 hover:bg-gray-600 text-white"
+                  : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+              }`}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const DiffModal = ({ isOpen, onClose, segment, darkMode }) => {
+    if (!isOpen || !segment) return null;
+
+    return (
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+        onClick={onClose}
+        style={{
+          animation: 'fadeIn 0.2s ease-out'
+        }}
+      >
+        <div
+          className={`w-3/4 max-h-[80vh] rounded-lg ${
+            darkMode ? "bg-gray-800" : "bg-white"
+          } transform transition-all duration-200 ease-out`}
+          onClick={e => e.stopPropagation()}
+          style={{
+            animation: 'slideIn 0.3s ease-out'
+          }}
+        >
+          <div className="p-6 space-y-6">
+            {/* Header */}
+            <div className="flex justify-between items-center border-b pb-4">
+              <h3 className={`text-xl font-bold ${
+                darkMode ? "text-white" : "text-gray-800"
+              }`}>
+                Code Segment Analysis
+              </h3>
+              <button
+                onClick={onClose}
+                className={`p-2 rounded-full hover:bg-opacity-80 transition-colors ${
+                  darkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                }`}
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="grid grid-cols-2 gap-6">
+              {/* Left Column - Context */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className={`text-lg font-semibold mb-2 ${
+                    darkMode ? "text-gray-300" : "text-gray-700"
+                  }`}>
+                    Code Context
+                  </h4>
+                  <div className={`p-4 rounded-lg font-mono text-sm ${
+                    darkMode ? "bg-gray-900" : "bg-gray-50"
+                  } border ${
+                    darkMode ? "border-gray-700" : "border-gray-200"
+                  }`}>
+                    <pre className="whitespace-pre-wrap overflow-x-auto">
+                      <code className={darkMode ? "text-gray-300" : "text-gray-800"}>
+                        {segment.context}
+                      </code>
+                    </pre>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column - Details & Analysis */}
+              <div className="space-y-6">
+                {/* Segment Details */}
+                <div>
+                  <h4 className={`text-lg font-semibold mb-4 ${
+                    darkMode ? "text-gray-300" : "text-gray-700"
+                  }`}>
+                    Segment Details
+                  </h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className={`p-4 rounded-lg ${
+                      darkMode ? "bg-gray-900" : "bg-gray-50"
+                    } border ${
+                      darkMode ? "border-gray-700" : "border-gray-200"
+                    }`}>
+                      <div className="space-y-2">
+                        <p className={`${
+                          darkMode ? "text-gray-400" : "text-gray-600"
+                        }`}>
+                          Type
+                          <span className={`block text-lg font-medium ${
+                            darkMode ? "text-gray-200" : "text-gray-800"
+                          }`}>
+                            {segment.type.charAt(0).toUpperCase() + segment.type.slice(1)}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`p-4 rounded-lg ${
+                      darkMode ? "bg-gray-900" : "bg-gray-50"
+                    } border ${
+                      darkMode ? "border-gray-700" : "border-gray-200"
+                    }`}>
+                      <div className="space-y-2">
+                        <p className={`${
+                          darkMode ? "text-gray-400" : "text-gray-600"
+                        }`}>
+                          Position
+                          <span className={`block text-lg font-medium ${
+                            darkMode ? "text-gray-200" : "text-gray-800"
+                          }`}>
+                            Line {segment.line}, Pos {segment.position}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Complexity Analysis */}
+                <div>
+                  <h4 className={`text-lg font-semibold mb-4 ${
+                    darkMode ? "text-gray-300" : "text-gray-700"
+                  }`}>
+                    Complexity Analysis
+                  </h4>
+                  <div className={`p-4 rounded-lg ${
+                    darkMode ? "bg-gray-900" : "bg-gray-50"
+                  } border ${
+                    darkMode ? "border-gray-700" : "border-gray-200"
+                  }`}>
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span className={darkMode ? "text-gray-400" : "text-gray-600"}>
+                            Complexity Score
+                          </span>
+                          <span className={`font-medium ${
+                            segment.complexity > 0.7 ? "text-red-500" :
+                            segment.complexity > 0.4 ? "text-yellow-500" :
+                            "text-green-500"
+                          }`}>
+                            {(segment.complexity * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${
+                              segment.complexity > 0.7 ? "bg-red-500" :
+                              segment.complexity > 0.4 ? "bg-yellow-500" :
+                              "bg-green-500"
+                            }`}
+                            style={{
+                              width: `${segment.complexity * 100}%`,
+                              transition: 'width 0.5s ease-out'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Code Smells */}
+                {segment.codeSmells?.length > 0 && (
+                  <div>
+                    <h4 className={`text-lg font-semibold mb-4 ${
+                      darkMode ? "text-yellow-400" : "text-yellow-600"
+                    }`}>
+                      Code Smells
+                    </h4>
+                    <div className={`p-4 rounded-lg ${
+                      darkMode ? "bg-gray-900" : "bg-gray-50"
+                    } border ${
+                      darkMode ? "border-gray-700" : "border-gray-200"
+                    }`}>
+                      <ul className="space-y-2">
+                        {segment.codeSmells.map((smell, index) => (
+                          <li
+                            key={index}
+                            className={`flex items-start gap-2 ${
+                              darkMode ? "text-gray-300" : "text-gray-600"
+                            }`}
+                          >
+                            <AlertTriangle className="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" />
+                            <span>{smell.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <div className="p-6 h-screen" style={{ background: theme.background }}>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold" style={{ color: theme.text.primary }}>
-          Code Timeline Visualizer
-        </h2>
-        <div className="flex items-center space-x-4">
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className="p-2 rounded-lg transition-colors"
-            style={{
-              background: theme.surface,
-              color: theme.text.primary,
-              border: `1px solid ${theme.border}`,
-              boxShadow: theme.shadow
-            }}
-          >
-            {darkMode ? <Moon size={20} /> : <Sun size={20} />}
-          </button>
-
-          <a
-            href="https://github.com/elyesbenamor/code_timeline_preview"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`p-2 rounded-lg transition-colors ${
-              darkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-            }`}
-          >
-            <Github className="w-4 h-4" />
-          </a>
-
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="flex items-center gap-1 p-2 rounded-lg transition-colors"
-              style={{
-                background: theme.surface,
-                color: theme.text.primary,
-                border: `1px solid ${theme.border}`,
-                boxShadow: theme.shadow
-              }}
-            >
-              <Download size={20} />
-              <ChevronDown size={16} />
-            </button>
+      {mounted ? (
+        <>
+          <div className="flex items-center justify-between mb-6">
+            <h1 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-gray-800"}`}>
+              Code Timeline Visualizer
+            </h1>
             
-            {showExportMenu && (
-              <div 
-                className="absolute right-0 mt-2 py-2 w-48 rounded-lg"
-                style={{
-                  background: theme.surface,
-                  border: `1px solid ${theme.border}`,
-                  boxShadow: theme.shadow,
-                  zIndex: 9999
-                }}
-              >
-                {exportFormats.map(format => (
-                  <button
-                    key={format.id}
-                    onClick={() => {
-                      format.handler();
-                      setShowExportMenu(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm ${
-                      darkMode
-                        ? "hover:bg-gray-700 text-gray-300"
-                        : "hover:bg-gray-100 text-gray-700"
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className={`w-64 px-4 py-2 rounded border ${
+                      darkMode 
+                        ? "bg-gray-800 border-gray-700 text-gray-200" 
+                        : "bg-white border-gray-300"
                     }`}
-                  >
-                    {format.label}
-                  </button>
-                ))}
+                  />
+                </div>
+                <button
+                  onClick={handleDelete}
+                  className={`p-2 rounded ${
+                    darkMode 
+                      ? "bg-red-600 hover:bg-red-700 text-white" 
+                      : "bg-red-500 hover:bg-red-600 text-white"
+                  }`}
+                  title="Clear code"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsFilterOpen(true)}
+                  className={`p-2 rounded ${
+                    darkMode 
+                      ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                      : "bg-white hover:bg-gray-100 border border-gray-300"
+                  }`}
+                  title="Filter code elements"
+                >
+                  <BarChart2 className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setShowComplexity(!showComplexity)}
+                  className={`p-2 rounded transition-colors ${
+                    darkMode
+                      ? `${showComplexity ? "bg-gray-700" : ""} hover:bg-gray-700 text-gray-300`
+                      : `${showComplexity ? "bg-gray-100" : ""} hover:bg-gray-100 text-gray-700`
+                  }`}
+                  title={showComplexity ? "Show syntax highlighting" : "Show complexity"}
+                >
+                  <Activity className="w-5 h-5" />
+                </button>
               </div>
-            )}
-          </div>
 
-          <FileUpload 
-            onFileContent={handleCodeInput}
-            className={`${
-              darkMode
-                ? "bg-gray-700 text-gray-200"
-                : "bg-gray-200 text-gray-700"
-            }`}
-          />
-        </div>
-      </div>
-
-      {error && (
-        <Alert 
-          type="error" 
-          message={error} 
-          onClose={() => setError(null)}
-          className="mb-4"
-        />
-      )}
-
-      <div className="flex gap-6 h-[calc(100vh-8rem)]">
-        <div className="flex flex-col w-1/2">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full px-4 py-2 rounded border ${
-                  darkMode 
-                    ? "bg-gray-800 border-gray-700 text-gray-200" 
-                    : "bg-white border-gray-300"
-                }`}
-              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className={`p-2 rounded ${
+                    darkMode 
+                      ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                      : "bg-white hover:bg-gray-100 border border-gray-300"
+                  }`}
+                >
+                  {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                </button>
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={`p-2 rounded ${
+                    darkMode 
+                      ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                      : "bg-white hover:bg-gray-100 border border-gray-300"
+                  }`}
+                >
+                  <History className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className={`p-2 rounded ${
+                    darkMode 
+                      ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                      : "bg-white hover:bg-gray-100 border border-gray-300"
+                  }`}
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+                <label 
+                  className={`p-2 rounded cursor-pointer ${
+                    darkMode 
+                      ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                      : "bg-white hover:bg-gray-100 border border-gray-300"
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept="*"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                  <Share2 className="w-5 h-5" />
+                </label>
+              </div>
             </div>
-            <button
-              onClick={() => setIsFilterOpen(true)}
-              className={`p-2 rounded ${
-                darkMode 
-                  ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
-                  : "bg-white hover:bg-gray-100 border border-gray-300"
-              }`}
-              title="Filter code elements"
-            >
-              <BarChart2 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={handleClearTimeline}
-              className={`p-2 rounded transition-colors ${
-                darkMode 
-                  ? "bg-red-600 hover:bg-red-700 text-white" 
-                  : "bg-red-500 hover:bg-red-600 text-white"
-              }`}
-              title="Clear all code snippets"
-            >
-              <MinusCircle className="w-5 h-5" />
-            </button>
           </div>
 
-          <div className="flex-1">
-            <AceEditor
-              placeholder="Paste your code here..."
-              theme={darkMode ? "dracula" : "github"}
-              value={codeInput}
-              mode="javascript"
-              width="100%"
-              height="100%"
-              onChange={handleCodeInput}
-              className={`rounded-lg shadow-sm h-full ${
-                darkMode 
-                  ? "border border-gray-700" 
-                  : "border border-gray-200"
-              }`}
-              setOptions={{
-                showLineNumbers: true,
-                showGutter: true,
-                fontSize: 14,
-                tabSize: 2,
-                useWorker: false
-              }}
+          {error && (
+            <Alert 
+              type="error" 
+              message={error} 
+              onClose={() => setError(null)}
+              className="mb-4"
             />
-          </div>
-        </div>
+          )}
 
-        <div className="flex flex-col w-1/2">
-          <div className={`flex items-center justify-between p-3 rounded-lg mb-4 ${
-            darkMode
-              ? "bg-gray-800 border border-gray-700"
-              : "bg-white border border-gray-200 shadow-sm"
-          }`}>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleZoomOut}
-                className={`p-2 rounded-lg transition-colors ${
-                  darkMode
-                    ? "hover:bg-gray-700 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-700"
-                }`}
-                disabled={zoom <= 0.5}
-              >
-                <MinusCircle className="w-4 h-4" />
-              </button>
-              <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                onClick={handleZoomIn}
-                className={`p-2 rounded-lg transition-colors ${
-                  darkMode
-                    ? "hover:bg-gray-700 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-700"
-                }`}
-                disabled={zoom >= 2}
-              >
-                <PlusCircle className="w-4 h-4" />
-              </button>
+          <div className="flex gap-6 h-[calc(100vh-8rem)]">
+            <div className="flex flex-col w-1/2">
+              <div className="flex-1">
+                <AceEditor
+                  placeholder="Paste your code here..."
+                  theme={darkMode ? "dracula" : "github"}
+                  value={codeInput}
+                  mode="javascript"
+                  width="100%"
+                  height="100%"
+                  onChange={handleCodeInput}
+                  className={`rounded-lg shadow-sm h-full ${
+                    darkMode 
+                      ? "border border-gray-700" 
+                      : "border border-gray-200"
+                  }`}
+                  setOptions={{
+                    showLineNumbers: true,
+                    showGutter: true,
+                    fontSize: 14,
+                    tabSize: 2,
+                    useWorker: false
+                  }}
+                />
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowComplexity(!showComplexity)}
-                className={`p-2 rounded-lg transition-colors ${
-                  darkMode
-                    ? `${showComplexity ? "bg-gray-700" : ""} hover:bg-gray-700 text-gray-300`
-                    : `${showComplexity ? "bg-gray-100" : ""} hover:bg-gray-100 text-gray-700`
-                }`}
-                title={showComplexity ? "Show syntax highlighting" : "Show complexity"}
-              >
-                <Activity className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex gap-4 flex-1 min-h-0">
-            <div
-              ref={timelineContainerRef}
-              className={`flex-1 overflow-y-auto overflow-x-hidden rounded-lg border ${
-                darkMode
-                  ? "bg-gray-800 border-gray-700"
-                  : "bg-white border-gray-200 shadow-sm"
-              }`}
-              style={{ position: 'relative' }}
-            >
-              <div 
-                ref={timelineRef}
-                className="p-4 space-y-1" 
-                style={{ 
-                  transform: `scale(${zoom})`, 
-                  transformOrigin: 'top left',
-                  minHeight: '100%',
-                  position: 'relative'
-                }}
-              >
-                {filteredTimelineData.map((row) => {
-                  const analysis = analyzeCodeSegment(row.segments.map(s => s.text).join(''));
-                  return (
-                    <div key={row.id} className="flex items-center" style={{ position: 'relative' }}>
-                      <span
-                        className={`w-8 text-sm font-mono select-none ${
-                          darkMode ? "text-gray-400" : "text-gray-500"
-                        }`}
-                      >
-                        {row.id}
-                      </span>
-                      <div className="flex items-center flex-1" style={{ position: 'relative' }}>
-                        {row.segments.map((segment, segIndex) => (
-                          <div
-                            key={segIndex}
-                            className="relative"
-                          >
+            <div className="flex flex-col w-1/2">
+              <div className="relative flex-1 overflow-hidden">
+                <div
+                  ref={timelineRef}
+                  className={`w-full h-full p-4 rounded-lg border overflow-y-auto ${
+                    darkMode
+                      ? "bg-gray-800 border-gray-700"
+                      : "bg-white border border-gray-200 shadow-sm"
+                  }`}
+                  style={{
+                    scrollBehavior: 'smooth'
+                  }}
+                >
+                  {filteredTimelineData.map((row) => {
+                    const analysis = analyzeCodeSegment(row.segments.map(s => s.text).join(''));
+                    return (
+                      <div key={row.id} className="flex items-center" style={{ position: 'relative' }}>
+                        <span
+                          className={`w-8 text-sm font-mono select-none ${
+                            darkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          {row.id}
+                        </span>
+                        <div className="flex items-center flex-1" style={{ position: 'relative' }}>
+                          {row.segments.map((segment, segIndex) => (
                             <div
-                              className="rounded mx-[1px] hover:opacity-80"
-                              style={{
-                                backgroundColor: getSegmentColor(segment, analysis),
-                                opacity: getSegmentOpacity(analysis),
-                                height: `${getSegmentHeight(analysis.complexity)}px`,
-                                width: `${segment.width}px`,
-                                cursor: 'pointer'
-                              }}
-                              onClick={() => {
-                                setSelectedSegment({
-                                  ...segment,
-                                  complexity: analysis.complexity,
-                                  codeSmells: analysis.codeSmells,
-                                  line: row.id,
-                                  position: segIndex + 1,
-                                  context: timelineData[row.id - 2]?.segments.map(s => s.text).join('') + '\n' +
-                                          timelineData[row.id - 1]?.segments.map(s => s.text).join('') + '\n' +
-                                          timelineData[row.id]?.segments.map(s => s.text).join('') + '\n' +
-                                          timelineData[row.id + 1]?.segments.map(s => s.text).join('') + '\n' +
-                                          timelineData[row.id + 2]?.segments.map(s => s.text).join('')
-                                });
-                                setIsDiffModalOpen(true);
-                              }}
-                              onMouseEnter={(e) => {
-                                const tooltip = e.currentTarget.nextElementSibling;
-                                if (tooltip) {
-                                  tooltip.style.display = 'block';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                const tooltip = e.currentTarget.nextElementSibling;
-                                if (tooltip) {
-                                  tooltip.style.display = 'none';
-                                }
-                              }}
-                            />
-                            <div 
-                              className={`absolute hidden p-2 rounded-lg shadow-lg ${
-                                darkMode 
-                                  ? "bg-gray-800 text-gray-200 border border-gray-700" 
-                                  : "bg-white text-gray-700 border border-gray-200"
-                              }`}
-                              style={{
-                                position: 'absolute',
-                                top: '50%',
-                                left: '50%',
-                                transform: 'translate(-50%, -50%)',
-                                width: '200px',
-                                zIndex: 9999,
-                                pointerEvents: 'none'
-                              }}
+                              key={segIndex}
+                              className="relative"
                             >
-                              <div className="text-sm font-semibold mb-1">{segment.text}</div>
-                              <div className="text-xs space-y-1">
-                                <div>Type: {segment.type}</div>
-                                <div>Complexity: {analysis.complexity.toFixed(1)}</div>
-                                {analysis.codeSmells?.length > 0 && (
-                                  <div className={darkMode ? "text-yellow-400" : "text-yellow-600"}>
-                                    Code Smells:
-                                    <ul className="ml-2 mt-1">
-                                      {analysis.codeSmells.map((smell, i) => (
-                                        <li key={i}>• {smell.message}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
+                              <div
+                                className="rounded mx-[1px] hover:opacity-80"
+                                style={{
+                                  backgroundColor: getSegmentColor(segment, analysis),
+                                  opacity: getSegmentOpacity(analysis),
+                                  height: `${getSegmentHeight(analysis.complexity)}px`,
+                                  width: `${getSegmentWidth(segment.text)}px`,
+                                  cursor: 'pointer'
+                                }}
+                                onClick={() => {
+                                  setSelectedSegment({
+                                    ...segment,
+                                    complexity: analysis.complexity,
+                                    codeSmells: analysis.codeSmells,
+                                    line: row.id,
+                                    position: segIndex + 1,
+                                    context: timelineData[row.id - 2]?.segments.map(s => s.text).join('') + '\n' +
+                                            timelineData[row.id - 1]?.segments.map(s => s.text).join('') + '\n' +
+                                            timelineData[row.id]?.segments.map(s => s.text).join('') + '\n' +
+                                            timelineData[row.id + 1]?.segments.map(s => s.text).join('') + '\n' +
+                                            timelineData[row.id + 2]?.segments.map(s => s.text).join('')
+                                  });
+                                  setIsDiffModalOpen(true);
+                                }}
+                                onMouseEnter={(e) => {
+                                  const tooltip = e.currentTarget.nextElementSibling;
+                                  if (tooltip) {
+                                    tooltip.style.display = 'block';
+                                  }
+                                }}
+                                onMouseLeave={(e) => {
+                                  const tooltip = e.currentTarget.nextElementSibling;
+                                  if (tooltip) {
+                                    tooltip.style.display = 'none';
+                                  }
+                                }}
+                              />
+                              <div 
+                                className={`absolute hidden p-2 rounded-lg shadow-lg ${
+                                  darkMode 
+                                    ? "bg-gray-800 text-gray-200 border border-gray-700" 
+                                    : "bg-white text-gray-700 border border-gray-200"
+                                }`}
+                                style={{
+                                  position: 'absolute',
+                                  top: '50%',
+                                  left: '50%',
+                                  transform: 'translate(-50%, -50%)',
+                                  width: '200px',
+                                  zIndex: 9999,
+                                  pointerEvents: 'none'
+                                }}
+                              >
+                                <div className="text-sm font-semibold mb-1">{segment.text}</div>
+                                <div className="text-xs space-y-1">
+                                  <div>Type: {segment.type}</div>
+                                  <div>Complexity: {analysis.complexity.toFixed(1)}</div>
+                                  {analysis.codeSmells?.length > 0 && (
+                                    <div className={darkMode ? "text-yellow-400" : "text-yellow-600"}>
+                                      Code Smells:
+                                      <ul className="ml-2 mt-1">
+                                        {analysis.codeSmells.map((smell, i) => (
+                                          <li key={i}>• {smell.message}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <MiniMap
-              timelineData={timelineData}
-              visibleRange={visibleRange}
-              onNavigate={(position) => {
-                if (timelineContainerRef.current) {
-                  const scrollHeight = timelineContainerRef.current.scrollHeight;
-                  const scrollPosition = (position / timelineData.length) * scrollHeight;
-                  timelineContainerRef.current.scrollTop = scrollPosition;
-                }
-              }}
-              darkMode={darkMode}
-            />
-          </div>
-
-          <div className={`mt-4 p-4 rounded-lg border ${
-            darkMode
-              ? "bg-gray-800 border-gray-700"
-              : "bg-white border border-gray-200 shadow-sm"
-          }`}>
-            <div className="flex flex-wrap gap-3 text-xs">
-              {showComplexity ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: theme.complexity.low }}
-                    />
-                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                      Low Complexity
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: theme.complexity.medium }}
-                    />
-                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                      Medium Complexity
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: theme.complexity.high }}
-                    />
-                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                      High Complexity
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: theme.complexity.veryHigh }}
-                    />
-                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                      Very High Complexity
-                    </span>
-                  </div>
-                  <div className="flex items-center">
-                    <div
-                      className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: theme.complexity.extreme }}
-                    />
-                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
-                      Extreme Complexity
-                    </span>
-                  </div>
+                    );
+                  })}
                 </div>
-              ) : (
-                Object.entries(elementTypes).map(
-                  ([key, color]) =>
-                    key !== "space" &&
-                    key !== "default" && (
-                      <div key={key} className="flex items-center">
+              </div>
+
+              <div className={`mt-4 p-4 rounded-lg border ${
+                darkMode
+                  ? "bg-gray-800 border-gray-700"
+                  : "bg-white border border-gray-200 shadow-sm"
+              }`}>
+                <div className="flex flex-wrap gap-3 text-xs">
+                  {showComplexity ? (
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center">
                         <div
                           className="w-3 h-3 mr-1 rounded shadow-sm"
-                          style={{ backgroundColor: color }}
+                          style={{ backgroundColor: theme.severity.low }}
                         />
-                        <span
-                          className={darkMode ? "text-gray-300" : "text-gray-700"}
-                        >
-                          {key.charAt(0).toUpperCase() + key.slice(1)}
+                        <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                          Low Severity
                         </span>
                       </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-3 h-3 mr-1 rounded shadow-sm"
+                          style={{ backgroundColor: theme.severity.medium }}
+                        />
+                        <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                          Medium Severity
+                        </span>
+                      </div>
+                      <div className="flex items-center">
+                        <div
+                          className="w-3 h-3 mr-1 rounded shadow-sm"
+                          style={{ backgroundColor: theme.severity.high }}
+                        />
+                        <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                          High Severity
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    Object.entries(elementTypes).map(
+                      ([key, color]) =>
+                        key !== "space" &&
+                        key !== "default" && (
+                          <div key={key} className="flex items-center">
+                            <div
+                              className="w-3 h-3 mr-1 rounded shadow-sm"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span
+                              className={darkMode ? "text-gray-300" : "text-gray-700"}
+                            >
+                              {key.charAt(0).toUpperCase() + key.slice(1)}
+                            </span>
+                          </div>
+                        )
                     )
-                )
-              )}
+                  )}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <FilterDialog
-        isOpen={isFilterOpen}
-        onClose={() => setIsFilterOpen(false)}
-        onApply={handleFilterChange}
-        filters={filters}
-        darkMode={darkMode}
-      />
-      <DiffModal
-        isOpen={isDiffModalOpen}
-        onClose={() => setIsDiffModalOpen(false)}
-        segment={selectedSegment}
-        darkMode={darkMode}
-      />
+          <FilterDialog
+            isOpen={isFilterOpen}
+            onClose={() => setIsFilterOpen(false)}
+            onApply={handleFilterChange}
+            filters={filters}
+            darkMode={darkMode}
+          />
+          <DiffModal
+            isOpen={isDiffModalOpen}
+            onClose={() => setIsDiffModalOpen(false)}
+            segment={selectedSegment}
+            darkMode={darkMode}
+          />
+
+          {/* History Modal */}
+          {showHistory && (
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+              onClick={() => setShowHistory(false)}
+            >
+              <div 
+                className="relative w-3/4 max-h-[80vh] rounded-lg p-6 overflow-hidden"
+                style={{ background: theme.surface }}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-semibold" style={{ color: theme.text.primary }}>
+                    Code History
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={clearHistory}
+                      className={`p-2 rounded transition-colors ${
+                        darkMode 
+                          ? "bg-red-600 hover:bg-red-700 text-white" 
+                          : "bg-red-500 hover:bg-red-600 text-white"
+                      }`}
+                      title="Clear History"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowHistory(false)}
+                      className="p-2 rounded hover:bg-opacity-80"
+                      style={{ background: theme.surface, color: theme.text.primary }}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="overflow-y-auto max-h-[calc(80vh-8rem)]">
+                  {history.length === 0 ? (
+                    <p className="text-center py-4" style={{ color: theme.text.secondary }}>
+                      No history available
+                    </p>
+                  ) : (
+                    history.map(entry => (
+                      <div
+                        key={entry.id}
+                        className="mb-4 p-4 rounded-lg"
+                        style={{ 
+                          background: theme.background,
+                          border: `1px solid ${theme.border}`
+                        }}
+                      >
+                        <div className="flex justify-between items-center mb-2">
+                          <span style={{ color: theme.text.secondary }}>
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </span>
+                          <div className="flex gap-2">
+                            <span
+                              className="px-2 py-1 rounded text-sm"
+                              style={{
+                                background: entry.type === 'deleted' ? theme.complexity.high : theme.complexity.medium,
+                                color: 'white'
+                              }}
+                            >
+                              {entry.type}
+                            </span>
+                            <button
+                              onClick={() => restoreFromHistory(entry)}
+                              className="px-2 py-1 rounded text-sm"
+                              style={{
+                                background: theme.accent,
+                                color: 'white'
+                              }}
+                            >
+                              Restore
+                            </button>
+                          </div>
+                        </div>
+                        <pre
+                          className="mt-2 p-2 rounded overflow-x-auto"
+                          style={{
+                            background: theme.surface,
+                            color: theme.text.primary,
+                            maxHeight: '200px'
+                          }}
+                        >
+                          {entry.code}
+                        </pre>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
     </div>
   );
 };
