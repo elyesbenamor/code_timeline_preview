@@ -50,6 +50,7 @@ const CodeTimeline = () => {
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [loadingText, setLoadingText] = useState('analyzing');
 
   // Initialize state from localStorage after mount
   useEffect(() => {
@@ -801,16 +802,60 @@ const CodeTimeline = () => {
     );
   };
 
+  useEffect(() => {
+    const texts = [
+      'parsing code', 
+      'finding patterns', 
+      'analyzing complexity', 
+      'detecting smells',
+      'optimizing view',
+      'brewing coffee ☕',
+      'reading minds 🤔',
+      'doing magic ✨'
+    ];
+    let index = 0;
+    
+    const interval = setInterval(() => {
+      index = (index + 1) % texts.length;
+      setLoadingText(texts[index]);
+    }, 2000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="p-6 h-screen" style={{ background: theme.background }}>
       {mounted ? (
         <>
           <div className="flex items-center justify-between mb-6">
-            <h1 className={`text-2xl font-bold ${
-              darkMode ? "text-white" : "text-gray-800"
-            }`}>
-              Code Timeline Visualizer
-            </h1>
+            <div className="flex flex-col">
+              <h1 className={`text-3xl font-bold bg-clip-text text-transparent animate-gradient-x bg-gradient-to-r ${
+                darkMode 
+                  ? "from-blue-400 via-purple-500 to-pink-500"
+                  : "from-blue-600 via-purple-600 to-pink-600"
+              }`}>
+                Code Timeline
+              </h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`text-sm ${
+                  darkMode ? "text-gray-400" : "text-gray-600"
+                }`}>
+                  Visualize your code's structure
+                </span>
+                <div className="flex items-center gap-2">
+                  <div className="loading-dots flex items-center justify-center w-12 h-4">
+                    <div className={`dot ${darkMode ? "bg-blue-400" : "bg-blue-600"}`}></div>
+                    <div className={`dot ${darkMode ? "bg-purple-400" : "bg-purple-600"}`}></div>
+                    <div className={`dot ${darkMode ? "bg-pink-400" : "bg-pink-600"}`}></div>
+                  </div>
+                  <span className={`text-sm italic min-w-[120px] ${
+                    darkMode ? "text-gray-400" : "text-gray-600"
+                  }`}>
+                    {loadingText}
+                  </span>
+                </div>
+              </div>
+            </div>
             
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
