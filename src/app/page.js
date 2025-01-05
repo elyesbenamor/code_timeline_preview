@@ -387,6 +387,7 @@ const CodeTimeline = () => {
                   ? "bg-gray-800 border-gray-700"
                   : "bg-white border-gray-200 shadow-sm"
               }`}
+              style={{ position: 'relative' }}
             >
               <div 
                 ref={timelineRef}
@@ -394,13 +395,14 @@ const CodeTimeline = () => {
                 style={{ 
                   transform: `scale(${zoom})`, 
                   transformOrigin: 'top left',
-                  minHeight: '100%'
+                  minHeight: '100%',
+                  position: 'relative'
                 }}
               >
                 {filteredTimelineData.map((row) => {
                   const analysis = analyzeCodeSegment(row.segments.map(s => s.text).join(''));
                   return (
-                    <div key={row.id} className="flex items-center">
+                    <div key={row.id} className="flex items-center" style={{ position: 'relative' }}>
                       <span
                         className={`w-8 text-sm font-mono select-none ${
                           darkMode ? "text-gray-400" : "text-gray-500"
@@ -408,28 +410,14 @@ const CodeTimeline = () => {
                       >
                         {row.id}
                       </span>
-                      <div className="flex items-center flex-1">
+                      <div className="flex items-center flex-1" style={{ position: 'relative' }}>
                         {row.segments.map((segment, segIndex) => (
                           <div
                             key={segIndex}
-                            className="relative hover:z-10"
-                            onMouseEnter={(e) => {
-                              const tooltip = e.currentTarget.querySelector('.tooltip');
-                              if (tooltip) {
-                                tooltip.style.display = 'block';
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              const tooltip = e.currentTarget.querySelector('.tooltip');
-                              if (tooltip) {
-                                tooltip.style.display = 'none';
-                              }
-                            }}
+                            className="relative"
                           >
                             <div
-                              className={`rounded transition-all duration-200 hover:opacity-80 mx-[1px] ${
-                                darkMode ? "" : "hover:shadow-sm"
-                              }`}
+                              className="rounded mx-[1px] hover:opacity-80"
                               style={{
                                 backgroundColor: getSegmentColor(segment, analysis),
                                 opacity: getSegmentOpacity(analysis),
@@ -437,64 +425,50 @@ const CodeTimeline = () => {
                                 width: `${segment.width}px`,
                                 cursor: 'pointer'
                               }}
+                              onMouseEnter={(e) => {
+                                const tooltip = e.currentTarget.nextElementSibling;
+                                if (tooltip) {
+                                  tooltip.style.display = 'block';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                const tooltip = e.currentTarget.nextElementSibling;
+                                if (tooltip) {
+                                  tooltip.style.display = 'none';
+                                }
+                              }}
                             />
                             <div 
-                              className={`tooltip absolute hidden p-3 rounded z-50 text-xs font-mono ${
+                              className={`absolute hidden p-2 rounded-lg shadow-lg ${
                                 darkMode 
                                   ? "bg-gray-800 text-gray-200 border border-gray-700" 
-                                  : "bg-white text-gray-700 border border-gray-200 shadow-lg"
+                                  : "bg-white text-gray-700 border border-gray-200"
                               }`}
                               style={{
-                                left: '0',
-                                top: '-100%',
-                                transform: 'translateY(-8px)',
-                                minWidth: '200px',
-                                maxWidth: '300px'
+                                position: 'absolute',
+                                top: '50%',
+                                left: '50%',
+                                transform: 'translate(-50%, -50%)',
+                                width: '200px',
+                                zIndex: 9999,
+                                pointerEvents: 'none'
                               }}
                             >
-                              <div className="font-bold mb-2 break-all">{segment.text}</div>
-                              <div className="space-y-1">
+                              <div className="text-sm font-semibold mb-1">{segment.text}</div>
+                              <div className="text-xs space-y-1">
                                 <div>Type: {segment.type}</div>
                                 <div>Complexity: {analysis.complexity.toFixed(1)}</div>
-                                {analysis.codeSmells.length > 0 && (
-                                  <div className="text-yellow-500">
+                                {analysis.codeSmells?.length > 0 && (
+                                  <div className={darkMode ? "text-yellow-400" : "text-yellow-600"}>
                                     Code Smells:
                                     <ul className="ml-2 mt-1">
-                                      {[...new Set(analysis.codeSmells.map(smell => smell.message))].map((message, i) => (
-                                        <li key={i} className="break-normal">• {message}</li>
+                                      {analysis.codeSmells.map((smell, i) => (
+                                        <li key={i}>• {smell.message}</li>
                                       ))}
                                     </ul>
-                                  </div>
-                                )}
-                                {analysis.performanceImpact.length > 0 && (
-                                  <div className="text-orange-500">
-                                    Performance Issues:
-                                    <ul className="ml-2 mt-1">
-                                      {analysis.performanceImpact.map((issue, i) => (
-                                        <li key={i} className="break-normal">• {issue.message}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {analysis.changeImpact && (
-                                  <div className={`
-                                    ${analysis.changeImpact.riskLevel === 'high' ? 'text-red-500' : 
-                                      analysis.changeImpact.riskLevel === 'medium' ? 'text-yellow-500' : 
-                                      'text-green-500'}
-                                  `}>
-                                    Change Impact: {analysis.changeImpact.riskLevel}
                                   </div>
                                 )}
                               </div>
-                              <div 
-                                className={`absolute w-2 h-2 transform rotate-45 ${
-                                  darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
-                                } border-b border-r`}
-                                style={{
-                                  bottom: '-5px',
-                                  left: '10%'
-                                }}
-                              />
                             </div>
                           </div>
                         ))}
@@ -522,7 +496,7 @@ const CodeTimeline = () => {
           <div className={`mt-4 p-4 rounded-lg border ${
             darkMode
               ? "bg-gray-800 border-gray-700"
-              : "bg-white border-gray-200 shadow-sm"
+              : "bg-white border border-gray-200 shadow-sm"
           }`}>
             <div className="flex flex-wrap gap-3 text-xs">
               {showComplexity ? (
