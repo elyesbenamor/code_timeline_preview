@@ -10,6 +10,7 @@ import { Alert } from "@/components/ui/alert";
 import { TimelineControls } from "@/components/ui/timeline-controls";
 import { FilterDialog } from "@/components/ui/filter-dialog";
 import { MiniMap } from "@/components/ui/mini-map";
+import { FileUpload } from "@/components/ui/file-upload";
 
 import "ace-builds/src-noconflict/mode-dart";
 import "ace-builds/src-noconflict/theme-dracula";
@@ -256,6 +257,15 @@ const CodeTimeline = () => {
           >
             <Download className="w-4 h-4" />
           </button>
+
+          <FileUpload 
+            onFileContent={handleCodeInput}
+            className={`${
+              darkMode
+                ? "bg-gray-700 text-gray-200"
+                : "bg-gray-200 text-gray-700"
+            }`}
+          />
         </div>
       </div>
 
@@ -270,6 +280,31 @@ const CodeTimeline = () => {
 
       <div className="flex gap-6 h-[calc(100vh-8rem)]">
         <div className="flex flex-col w-1/2">
+          <div className="mb-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Search in code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={`flex-1 px-4 py-2 rounded border ${
+                  darkMode 
+                    ? "bg-gray-800 border-gray-700 text-gray-200" 
+                    : "bg-white border-gray-300"
+                }`}
+              />
+              <button
+                onClick={() => setIsFilterOpen(true)}
+                className={`p-2 rounded ${
+                  darkMode 
+                    ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                    : "bg-white hover:bg-gray-100 border border-gray-300"
+                }`}
+              >
+                <BarChart2 className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
           <AceEditor
             placeholder="Paste your code here..."
             theme={darkMode ? "dracula" : "github"}
@@ -338,16 +373,6 @@ const CodeTimeline = () => {
                 title={showComplexity ? "Show syntax highlighting" : "Show complexity"}
               >
                 <Activity className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => downloadImage()}
-                className={`p-2 rounded-lg transition-colors ${
-                  darkMode
-                    ? "hover:bg-gray-700 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-700"
-                }`}
-              >
-                <Download className="w-4 h-4" />
               </button>
             </div>
           </div>
