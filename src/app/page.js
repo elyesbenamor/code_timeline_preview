@@ -42,9 +42,11 @@ const CodeTimeline = () => {
   });
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const [tooltipPosition, setTooltipPosition] = useState({ top: true });
+  const [tooltipVisible, setTooltipVisible] = useState(false);
 
   const timelineRef = useRef(null);
   const timelineContainerRef = useRef(null);
+  const tooltipRef = useRef(null);
 
   const elementTypes = {
     keyword: darkMode ? '#FF7B72' : '#D32F2F',     // Deeper red
@@ -412,13 +414,13 @@ const CodeTimeline = () => {
                             key={segIndex}
                             className="relative hover:z-10"
                             onMouseEnter={(e) => {
-                              const tooltip = e.currentTarget.querySelector('.segment-tooltip');
+                              const tooltip = e.currentTarget.querySelector('.tooltip');
                               if (tooltip) {
                                 tooltip.style.display = 'block';
                               }
                             }}
                             onMouseLeave={(e) => {
-                              const tooltip = e.currentTarget.querySelector('.segment-tooltip');
+                              const tooltip = e.currentTarget.querySelector('.tooltip');
                               if (tooltip) {
                                 tooltip.style.display = 'none';
                               }
@@ -437,18 +439,17 @@ const CodeTimeline = () => {
                               }}
                             />
                             <div 
-                              className={`segment-tooltip absolute hidden p-3 rounded z-50 text-xs font-mono min-w-[200px] max-w-[300px] ${
+                              className={`tooltip absolute hidden p-3 rounded z-50 text-xs font-mono ${
                                 darkMode 
                                   ? "bg-gray-800 text-gray-200 border border-gray-700" 
                                   : "bg-white text-gray-700 border border-gray-200 shadow-lg"
                               }`}
                               style={{
-                                left: segIndex > row.segments.length / 2 ? 'auto' : '0',
-                                right: segIndex > row.segments.length / 2 ? '0' : 'auto',
-                                bottom: '100%',
-                                marginBottom: '10px',
-                                maxHeight: '300px',
-                                overflow: 'auto'
+                                left: '0',
+                                top: '-100%',
+                                transform: 'translateY(-8px)',
+                                minWidth: '200px',
+                                maxWidth: '300px'
                               }}
                             >
                               <div className="font-bold mb-2 break-all">{segment.text}</div>
@@ -459,8 +460,8 @@ const CodeTimeline = () => {
                                   <div className="text-yellow-500">
                                     Code Smells:
                                     <ul className="ml-2 mt-1">
-                                      {analysis.codeSmells.map((smell, i) => (
-                                        <li key={i} className="break-normal">• {smell.message}</li>
+                                      {[...new Set(analysis.codeSmells.map(smell => smell.message))].map((message, i) => (
+                                        <li key={i} className="break-normal">• {message}</li>
                                       ))}
                                     </ul>
                                   </div>
@@ -491,7 +492,7 @@ const CodeTimeline = () => {
                                 } border-b border-r`}
                                 style={{
                                   bottom: '-5px',
-                                  left: segIndex > row.segments.length / 2 ? '90%' : '10%'
+                                  left: '10%'
                                 }}
                               />
                             </div>

@@ -11,11 +11,87 @@ const COMPLEXITY_WEIGHTS = {
 };
 
 const CODE_SMELL_PATTERNS = {
-  LONG_LINE: { pattern: /.{120,}/, message: 'Line too long (>120 characters)', severity: 'warning' },
-  NESTED_CALLBACKS: { pattern: /callback.*callback/i, message: 'Nested callbacks detected', severity: 'warning' },
-  MAGIC_NUMBERS: { pattern: /(?<![\w\d])-?\d{4,}(?![\w\d])/g, message: 'Magic number detected', severity: 'info' },
-  COMPLEX_CONDITION: { pattern: /&&.*&&|\|\|.*\|\|/, message: 'Complex condition', severity: 'warning' },
-  TODO_COMMENT: { pattern: /\/\/.*TODO/i, message: 'TODO comment found', severity: 'info' }
+  // ESLint-inspired patterns
+  NO_UNUSED_VARS: { 
+    pattern: /(?:let|const|var)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)\s*=.*?(?![\s\S]*\1)/, 
+    message: 'Unused variable detected', 
+    severity: 'warning' 
+  },
+  NO_CONSOLE: { 
+    pattern: /console\.(log|debug|info|warn|error)/, 
+    message: 'Unexpected console statement', 
+    severity: 'warning' 
+  },
+  MAX_LEN: { 
+    pattern: /.{120,}/, 
+    message: 'Line exceeds maximum length (120 characters)', 
+    severity: 'warning' 
+  },
+  NO_EVAL: { 
+    pattern: /\beval\(/, 
+    message: 'eval() is dangerous and should be avoided', 
+    severity: 'error' 
+  },
+  NO_ALERT: { 
+    pattern: /\b(alert|confirm|prompt)\(/, 
+    message: 'Unexpected alert/confirm/prompt', 
+    severity: 'warning' 
+  },
+  NO_NESTED_TERNARY: { 
+    pattern: /\?.*\?/, 
+    message: 'Nested ternary expressions are hard to read', 
+    severity: 'warning' 
+  },
+  PREFER_CONST: { 
+    pattern: /let\s+([a-zA-Z_$][0-9a-zA-Z_$]*)\s*=\s*[^;,\n]*(?![\s\S]*\1\s*=)/, 
+    message: 'Use const instead of let for values that are never reassigned', 
+    severity: 'info' 
+  },
+  NO_MULTIPLE_EMPTY_LINES: { 
+    pattern: /\n\s*\n\s*\n/, 
+    message: 'Multiple empty lines detected', 
+    severity: 'info' 
+  },
+  NO_DEBUGGER: { 
+    pattern: /debugger;?/, 
+    message: 'Unexpected debugger statement', 
+    severity: 'error' 
+  },
+  CALLBACK_RETURN: { 
+    pattern: /function.*callback.*\{(?![^}]*return)/, 
+    message: 'Expected return in callback function', 
+    severity: 'warning' 
+  },
+  NO_SHADOW: { 
+    pattern: /(?:let|const|var)\s+([a-zA-Z_$][0-9a-zA-Z_$]*).+?(?:let|const|var)\s+\1/, 
+    message: 'Variable shadows another variable', 
+    severity: 'warning' 
+  },
+  CAMELCASE: { 
+    pattern: /(?:let|const|var)\s+[a-z]+[_][a-z]+/, 
+    message: 'Use camelCase for variable names', 
+    severity: 'info' 
+  },
+  NO_MAGIC_NUMBERS: { 
+    pattern: /(?<![\w\d.])[0-9]{4,}(?![\w\d.])/, 
+    message: 'Avoid magic numbers, use named constants', 
+    severity: 'info' 
+  },
+  NO_NESTED_CALLBACKS: { 
+    pattern: /callback.*callback|promise.*then.*then|async.*await.*await/i, 
+    message: 'Avoid nested callbacks/promises, consider async/await', 
+    severity: 'warning' 
+  },
+  NO_LARGE_SWITCH: { 
+    pattern: /switch[^{]*\{(?:[^}]*case[^:]*:[^}]*){5,}\}/, 
+    message: 'Large switch statement, consider using a map/object', 
+    severity: 'warning' 
+  },
+  NO_COMMENTED_CODE: { 
+    pattern: /\/\/.*\b(if|for|while|function)\b|\*.*\b(if|for|while|function)\b/, 
+    message: 'Commented code detected, should be removed', 
+    severity: 'info' 
+  }
 };
 
 const PERFORMANCE_PATTERNS = {
@@ -112,18 +188,51 @@ export function getComplexityColor(complexity) {
 }
 
 /**
- * Detect code smells
+ * Detect code smells in a code segment
  */
 export function detectCodeSmells(code) {
   const smells = [];
+  const lines = code.split('\n');
   
+  // Check each line for code smells
+  lines.forEach((line, lineNumber) => {
+    Object.entries(CODE_SMELL_PATTERNS).forEach(([type, { pattern, message, severity }]) => {
+      if (pattern.test(line)) {
+        smells.push({
+          type,
+          message,
+          severity,
+          line: lineNumber + 1,
+          code: line.trim()
+        });
+      }
+    });
+  });
+
+  // Check entire code block for multi-line patterns
   Object.entries(CODE_SMELL_PATTERNS).forEach(([type, { pattern, message, severity }]) => {
     if (pattern.test(code)) {
-      smells.push({ type, message, severity });
+      // Avoid duplicate reports for patterns that were already caught line by line
+      const alreadyReported = smells.some(smell => 
+        smell.type === type && smell.code === code.match(pattern)?.[0]?.trim()
+      );
+      
+      if (!alreadyReported) {
+        smells.push({
+          type,
+          message,
+          severity,
+          code: code.match(pattern)?.[0]?.trim() || ''
+        });
+      }
     }
   });
   
-  return smells;
+  // Sort by severity (error > warning > info)
+  return smells.sort((a, b) => {
+    const severityOrder = { error: 0, warning: 1, info: 2 };
+    return severityOrder[a.severity] - severityOrder[b.severity];
+  });
 }
 
 /**
