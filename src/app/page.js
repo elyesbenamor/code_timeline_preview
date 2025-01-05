@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown } from "lucide-react";
+import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown, Sun, Moon } from "lucide-react";
 import html2canvas from "html2canvas";
 import AceEditor from "react-ace";
 import { validateCodeInput, parseCodeChanges, getTokenType } from "@/lib/utils";
@@ -20,9 +20,16 @@ import "ace-builds/src-noconflict/theme-github";
 import "ace-builds/src-noconflict/ext-language_tools";
 
 const CodeTimeline = () => {
+  // Load initial state from localStorage
+  const loadFromStorage = (key, defaultValue) => {
+    if (typeof window === 'undefined') return defaultValue;
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : defaultValue;
+  };
+
+  const [darkMode, setDarkMode] = useState(() => loadFromStorage('darkMode', true));
   const [codeInput, setCodeInput] = useState("");
-  const [timelineData, setTimelineData] = useState([]);
-  const [darkMode, setDarkMode] = useState(true);
+  const [timelineData, setTimelineData] = useState(() => loadFromStorage('timelineData', []));
   const [error, setError] = useState(null);
   const [zoom, setZoom] = useState(1);
   const [searchTerm, setSearchTerm] = useState("");
@@ -53,20 +60,114 @@ const CodeTimeline = () => {
   const timelineContainerRef = useRef(null);
   const tooltipRef = useRef(null);
 
+  // Theme configurations
+  const themes = {
+    dark: {
+      name: 'Dark',
+      background: '#1a1b26',
+      surface: '#24283b',
+      border: '#414868',
+      text: {
+        primary: '#c0caf5',
+        secondary: '#a9b1d6',
+        muted: '#565f89'
+      },
+      syntax: {
+        keyword: '#ff7b72',
+        class: '#7ee787',
+        function: '#d2a8ff',
+        variable: '#79c0ff',
+        operator: '#ffb757',
+        string: '#a5d6ff',
+        number: '#ffa657',
+        boolean: '#ff7b72',
+        comment: '#8b949e',
+        decorator: '#ffa657',
+        bracket: '#8b949e',
+        punctuation: '#8b949e'
+      },
+      complexity: {
+        low: '#4ade80',
+        medium: '#facc15',
+        high: '#fb923c',
+        veryHigh: '#f87171',
+        extreme: '#ef4444'
+      },
+      accent: '#7aa2f7',
+      hover: 'rgba(122, 162, 247, 0.1)',
+      shadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
+    },
+    light: {
+      name: 'Light',
+      background: '#ffffff',
+      surface: '#f8fafc',
+      border: '#e2e8f0',
+      text: {
+        primary: '#1e293b',
+        secondary: '#475569',
+        muted: '#94a3b8'
+      },
+      syntax: {
+        keyword: '#d32f2f',
+        class: '#2e7d32',
+        function: '#6200ea',
+        variable: '#0277bd',
+        operator: '#f57c00',
+        string: '#0277bd',
+        number: '#c62828',
+        boolean: '#d32f2f',
+        comment: '#757575',
+        decorator: '#f57c00',
+        bracket: '#546e7a',
+        punctuation: '#546e7a'
+      },
+      complexity: {
+        low: '#4ade80',
+        medium: '#facc15',
+        high: '#fb923c',
+        veryHigh: '#f87171',
+        extreme: '#ef4444'
+      },
+      accent: '#2563eb',
+      hover: 'rgba(37, 99, 235, 0.1)',
+      shadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+    }
+  };
+
+  // Custom theme hook
+  const useTheme = (darkMode) => {
+    const theme = darkMode ? themes.dark : themes.light;
+    
+    return {
+      ...theme,
+      // Helper functions
+      getElementColor: (type) => theme.syntax[type] || theme.text.primary,
+      getComplexityColor: (complexity) => {
+        if (complexity <= 2) return theme.complexity.low;
+        if (complexity <= 4) return theme.complexity.medium;
+        if (complexity <= 6) return theme.complexity.high;
+        if (complexity <= 8) return theme.complexity.veryHigh;
+        return theme.complexity.extreme;
+      }
+    };
+  };
+
+  const theme = useTheme(darkMode);
+
   const elementTypes = {
-    keyword: darkMode ? '#FF7B72' : '#D32F2F',     // Deeper red
-    class: darkMode ? '#7EE787' : '#2E7D32',       // Richer green
-    function: darkMode ? '#D2A8FF' : '#6200EA',    // Deeper purple
-    variable: darkMode ? '#79C0FF' : '#0277BD',    // Richer blue
-    operator: darkMode ? '#FFB757' : '#F57C00',    // Warmer orange
-    string: darkMode ? '#A5D6FF' : '#0277BD',      // Ocean blue
-    number: darkMode ? '#FFA657' : '#C62828',      // Ruby red
-    boolean: darkMode ? '#FF7B72' : '#D32F2F',     // Crimson red
-    comment: darkMode ? '#8B949E' : '#757575',     // Neutral gray
-    decorator: darkMode ? '#FFA657' : '#F57C00',   // Bright orange
-    bracket: darkMode ? '#8B949E' : '#546E7A',     // Steel blue-gray
-    punctuation: darkMode ? '#8B949E' : '#546E7A', // Steel blue-gray
-    default: darkMode ? '#C9D1D9' : '#24292E',     // Default text color
+    keyword: theme.syntax.keyword,
+    class: theme.syntax.class,
+    function: theme.syntax.function,
+    variable: theme.syntax.variable,
+    operator: theme.syntax.operator,
+    string: theme.syntax.string,
+    number: theme.syntax.number,
+    boolean: theme.syntax.boolean,
+    comment: theme.syntax.comment,
+    decorator: theme.syntax.decorator,
+    bracket: theme.syntax.bracket,
+    punctuation: theme.syntax.punctuation,
+    default: theme.text.primary,
     space: 'transparent'
   };
 
@@ -80,7 +181,7 @@ const CodeTimeline = () => {
     if (segment.color === 'transparent') return 'transparent';
     
     if (showComplexity) {
-      return analysis.color;
+      return theme.getComplexityColor(analysis.complexity);
     }
     return segment.color;
   };
@@ -216,7 +317,7 @@ const CodeTimeline = () => {
       if (!element) return;
 
       const canvas = await html2canvas(element, {
-        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        backgroundColor: theme.background,
         scale: scale,
         useCORS: true,
         logging: false,
@@ -241,7 +342,7 @@ const CodeTimeline = () => {
       if (!element) return;
 
       const canvas = await html2canvas(element, {
-        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        backgroundColor: theme.background,
         scale: scale,
         useCORS: true,
         logging: false,
@@ -265,7 +366,7 @@ const CodeTimeline = () => {
       if (!element) return;
 
       const canvas = await html2canvas(element, {
-        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        backgroundColor: theme.background,
         scale: scale,
         useCORS: true,
         logging: false,
@@ -317,7 +418,7 @@ const CodeTimeline = () => {
               .join('\n')}
           </style>
         </head>
-        <body style="background: ${darkMode ? '#1a1b26' : '#ffffff'}">
+        <body style="background: ${theme.background}">
           ${element.outerHTML}
         </body>
         </html>
@@ -421,33 +522,51 @@ const CodeTimeline = () => {
     handleScroll();
   }, [zoom]);
 
+  // Save to localStorage when state changes
+  useEffect(() => {
+    localStorage.setItem('darkMode', JSON.stringify(darkMode));
+  }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('timelineData', JSON.stringify(timelineData));
+  }, [timelineData]);
+
+  // Clear all timeline data and code input
+  const handleClearTimeline = () => {
+    if (window.confirm('Are you sure you want to clear all code snippets and editor content?')) {
+      setTimelineData([]);
+      setCodeInput('');
+      setError(null);
+      localStorage.removeItem('timelineData');
+      localStorage.removeItem('codeInput');
+    }
+  };
+
   return (
-    <div className={`p-6 h-screen ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h2
-          className={`text-xl font-semibold ${
-            darkMode ? "text-white" : "text-gray-800"
-          }`}
-        >
+    <div className="p-6 h-screen" style={{ background: theme.background }}>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-xl font-semibold" style={{ color: theme.text.primary }}>
           Code Timeline Visualizer
         </h2>
         <div className="flex items-center space-x-4">
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-full ${
-              darkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-            }`}
+            className="p-2 rounded-lg transition-colors"
+            style={{
+              background: theme.surface,
+              color: theme.text.primary,
+              border: `1px solid ${theme.border}`,
+              boxShadow: theme.shadow
+            }}
           >
-            {darkMode ? "Light Mode" : "Dark Mode"}
+            {darkMode ? <Moon size={20} /> : <Sun size={20} />}
           </button>
 
           <a
             href="https://github.com/elyesbenamor/code_timeline_preview"
             target="_blank"
             rel="noopener noreferrer"
-            className={`p-2 rounded-full ${
+            className={`p-2 rounded-lg transition-colors ${
               darkMode
                 ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
                 : "bg-gray-200 hover:bg-gray-300 text-gray-700"
@@ -459,12 +578,13 @@ const CodeTimeline = () => {
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
-              className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${
-                darkMode
-                  ? "hover:bg-gray-700 text-gray-300"
-                  : "hover:bg-gray-100 text-gray-700"
-              }`}
-              title="Export timeline"
+              className="flex items-center gap-1 p-2 rounded-lg transition-colors"
+              style={{
+                background: theme.surface,
+                color: theme.text.primary,
+                border: `1px solid ${theme.border}`,
+                boxShadow: theme.shadow
+              }}
             >
               <Download size={20} />
               <ChevronDown size={16} />
@@ -472,12 +592,13 @@ const CodeTimeline = () => {
             
             {showExportMenu && (
               <div 
-                className={`absolute right-0 mt-2 py-2 w-48 rounded-lg shadow-lg ${
-                  darkMode 
-                    ? "bg-gray-800 border border-gray-700" 
-                    : "bg-white border border-gray-200"
-                }`}
-                style={{ zIndex: 9999 }}
+                className="absolute right-0 mt-2 py-2 w-48 rounded-lg"
+                style={{
+                  background: theme.surface,
+                  border: `1px solid ${theme.border}`,
+                  boxShadow: theme.shadow,
+                  zIndex: 9999
+                }}
               >
                 {exportFormats.map(format => (
                   <button
@@ -521,52 +642,67 @@ const CodeTimeline = () => {
 
       <div className="flex gap-6 h-[calc(100vh-8rem)]">
         <div className="flex flex-col w-1/2">
-          <div className="mb-4">
-            <div className="flex gap-2">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="flex-1 relative">
               <input
                 type="text"
-                placeholder="Search in code..."
+                placeholder="Search..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className={`flex-1 px-4 py-2 rounded border ${
+                className={`w-full px-4 py-2 rounded border ${
                   darkMode 
                     ? "bg-gray-800 border-gray-700 text-gray-200" 
                     : "bg-white border-gray-300"
                 }`}
               />
-              <button
-                onClick={() => setIsFilterOpen(true)}
-                className={`p-2 rounded ${
-                  darkMode 
-                    ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
-                    : "bg-white hover:bg-gray-100 border border-gray-300"
-                }`}
-              >
-                <BarChart2 className="w-5 h-5" />
-              </button>
             </div>
+            <button
+              onClick={() => setIsFilterOpen(true)}
+              className={`p-2 rounded ${
+                darkMode 
+                  ? "bg-gray-800 hover:bg-gray-700 border border-gray-700" 
+                  : "bg-white hover:bg-gray-100 border border-gray-300"
+              }`}
+              title="Filter code elements"
+            >
+              <BarChart2 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleClearTimeline}
+              className={`p-2 rounded transition-colors ${
+                darkMode 
+                  ? "bg-red-600 hover:bg-red-700 text-white" 
+                  : "bg-red-500 hover:bg-red-600 text-white"
+              }`}
+              title="Clear all code snippets"
+            >
+              <MinusCircle className="w-5 h-5" />
+            </button>
           </div>
-          <AceEditor
-            placeholder="Paste your code here..."
-            theme={darkMode ? "dracula" : "github"}
-            value={codeInput}
-            mode="javascript"
-            width="100%"
-            height="100%"
-            onChange={handleCodeInput}
-            className={`rounded-lg shadow-sm ${
-              darkMode 
-                ? "border border-gray-700" 
-                : "border border-gray-200"
-            }`}
-            setOptions={{
-              showLineNumbers: true,
-              showGutter: true,
-              fontSize: 14,
-              tabSize: 2,
-              useWorker: false
-            }}
-          />
+
+          <div className="flex-1">
+            <AceEditor
+              placeholder="Paste your code here..."
+              theme={darkMode ? "dracula" : "github"}
+              value={codeInput}
+              mode="javascript"
+              width="100%"
+              height="100%"
+              onChange={handleCodeInput}
+              className={`rounded-lg shadow-sm h-full ${
+                darkMode 
+                  ? "border border-gray-700" 
+                  : "border border-gray-200"
+              }`}
+              setOptions={{
+                showLineNumbers: true,
+                showGutter: true,
+                fontSize: 14,
+                tabSize: 2,
+                useWorker: false
+              }}
+            />
+          </div>
         </div>
 
         <div className="flex flex-col w-1/2">
@@ -758,7 +894,7 @@ const CodeTimeline = () => {
                   <div className="flex items-center">
                     <div
                       className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: '#4CAF50' }}
+                      style={{ backgroundColor: theme.complexity.low }}
                     />
                     <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
                       Low Complexity
@@ -767,7 +903,7 @@ const CodeTimeline = () => {
                   <div className="flex items-center">
                     <div
                       className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: '#FFC107' }}
+                      style={{ backgroundColor: theme.complexity.medium }}
                     />
                     <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
                       Medium Complexity
@@ -776,7 +912,7 @@ const CodeTimeline = () => {
                   <div className="flex items-center">
                     <div
                       className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: '#FF9800' }}
+                      style={{ backgroundColor: theme.complexity.high }}
                     />
                     <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
                       High Complexity
@@ -785,10 +921,19 @@ const CodeTimeline = () => {
                   <div className="flex items-center">
                     <div
                       className="w-3 h-3 mr-1 rounded shadow-sm"
-                      style={{ backgroundColor: '#F44336' }}
+                      style={{ backgroundColor: theme.complexity.veryHigh }}
                     />
                     <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
                       Very High Complexity
+                    </span>
+                  </div>
+                  <div className="flex items-center">
+                    <div
+                      className="w-3 h-3 mr-1 rounded shadow-sm"
+                      style={{ backgroundColor: theme.complexity.extreme }}
+                    />
+                    <span className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                      Extreme Complexity
                     </span>
                   </div>
                 </div>
