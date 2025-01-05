@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
-import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity } from "lucide-react";
+import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown } from "lucide-react";
 import html2canvas from "html2canvas";
 import AceEditor from "react-ace";
 import { validateCodeInput, parseCodeChanges, getTokenType } from "@/lib/utils";
@@ -11,6 +11,7 @@ import { TimelineControls } from "@/components/ui/timeline-controls";
 import { FilterDialog } from "@/components/ui/filter-dialog";
 import { MiniMap } from "@/components/ui/mini-map";
 import { FileUpload } from "@/components/ui/file-upload";
+import jsPDF from 'jspdf';
 
 import "ace-builds/src-noconflict/mode-dart";
 import "ace-builds/src-noconflict/theme-dracula";
@@ -43,6 +44,7 @@ const CodeTimeline = () => {
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
   const [tooltipPosition, setTooltipPosition] = useState({ top: true });
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   const timelineRef = useRef(null);
   const timelineContainerRef = useRef(null);
@@ -157,23 +159,225 @@ const CodeTimeline = () => {
       .filter(row => row.segments.length > 0);
   }, [timelineData, filters, searchTerm]);
 
-  const downloadImage = async () => {
-    if (!timelineRef.current) return;
-    
-    try {
-      const canvas = await html2canvas(timelineRef.current, {
-        backgroundColor: darkMode ? "#2D2D2D" : "#FFFFFF",
-        scale: window.devicePixelRatio,
-      });
-      const image = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.href = image;
-      link.download = "code-timeline.png";
-      link.click();
-    } catch (err) {
-      setError("Failed to download image: " + err.message);
+  const exportFormats = [
+    { 
+      id: 'png-hq', 
+      label: 'PNG (High Quality)', 
+      handler: () => exportAsPNG({ scale: 3, quality: 1 }) 
+    },
+    { 
+      id: 'png', 
+      label: 'PNG (Standard)', 
+      handler: () => exportAsPNG({ scale: 2, quality: 0.9 }) 
+    },
+    { 
+      id: 'jpeg-hq', 
+      label: 'JPEG (High Quality)', 
+      handler: () => exportAsJPEG({ quality: 1, scale: 3 }) 
+    },
+    { 
+      id: 'jpeg', 
+      label: 'JPEG (Compressed)', 
+      handler: () => exportAsJPEG({ quality: 0.8, scale: 2 }) 
+    },
+    { 
+      id: 'pdf-hq', 
+      label: 'PDF (High Quality)', 
+      handler: () => exportAsPDF({ scale: 3, compress: false }) 
+    },
+    { 
+      id: 'pdf', 
+      label: 'PDF (Compressed)', 
+      handler: () => exportAsPDF({ scale: 2, compress: true }) 
+    },
+    { 
+      id: 'svg', 
+      label: 'SVG Vector', 
+      handler: exportAsSVG 
+    },
+    { 
+      id: 'html', 
+      label: 'HTML Document', 
+      handler: exportAsHTML 
+    },
+    { 
+      id: 'json', 
+      label: 'JSON Data', 
+      handler: exportAsJSON 
     }
-  };
+  ];
+
+  async function exportAsPNG({ scale = 2, quality = 0.9 }) {
+    try {
+      const element = timelineRef.current;
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        scale: scale,
+        useCORS: true,
+        logging: false,
+        allowTaint: true,
+        imageTimeout: 0,
+        removeContainer: true
+      });
+      
+      const dataUrl = canvas.toDataURL('image/png', quality);
+      const link = document.createElement('a');
+      link.download = `code-timeline-${scale}x.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('Error exporting as PNG:', error);
+    }
+  }
+
+  async function exportAsJPEG({ quality = 0.9, scale = 2 }) {
+    try {
+      const element = timelineRef.current;
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        scale: scale,
+        useCORS: true,
+        logging: false,
+        allowTaint: true,
+        imageTimeout: 0
+      });
+      
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      const link = document.createElement('a');
+      link.download = `code-timeline-${quality * 100}q.jpg`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error('Error exporting as JPEG:', error);
+    }
+  }
+
+  async function exportAsPDF({ scale = 2, compress = true }) {
+    try {
+      const element = timelineRef.current;
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        backgroundColor: darkMode ? '#1a1b26' : '#ffffff',
+        scale: scale,
+        useCORS: true,
+        logging: false,
+        allowTaint: true
+      });
+      
+      const imgData = canvas.toDataURL('image/jpeg', compress ? 0.8 : 1);
+      
+      // Calculate optimal page size
+      const pageWidth = canvas.width;
+      const pageHeight = canvas.height;
+      const pdf = new jsPDF({
+        orientation: pageWidth > pageHeight ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [pageWidth, pageHeight],
+        compress: compress
+      });
+      
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight);
+      pdf.save(`code-timeline-${compress ? 'compressed' : 'hq'}.pdf`);
+    } catch (error) {
+      console.error('Error exporting as PDF:', error);
+    }
+  }
+
+  async function exportAsHTML() {
+    try {
+      const element = timelineRef.current;
+      if (!element) return;
+      
+      // Create a full HTML document with styles
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Code Timeline Export</title>
+          <style>
+            ${Array.from(document.styleSheets)
+              .map(sheet => {
+                try {
+                  return Array.from(sheet.cssRules)
+                    .map(rule => rule.cssText)
+                    .join('\n');
+                } catch (e) {
+                  return '';
+                }
+              })
+              .join('\n')}
+          </style>
+        </head>
+        <body style="background: ${darkMode ? '#1a1b26' : '#ffffff'}">
+          ${element.outerHTML}
+        </body>
+        </html>
+      `;
+      
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'code-timeline.html';
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting as HTML:', error);
+    }
+  }
+
+  async function exportAsJSON() {
+    try {
+      const data = {
+        timeline: timelineData,
+        metadata: {
+          darkMode,
+          filters,
+          exportDate: new Date().toISOString(),
+          version: '1.0'
+        }
+      };
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'code-timeline.json';
+      link.href = url;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting as JSON:', error);
+    }
+  }
+
+  async function exportAsSVG() {
+    try {
+      const element = timelineRef.current;
+      if (!element) return;
+      
+      const clone = element.cloneNode(true);
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(clone);
+      
+      const blob = new Blob([svgString], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.download = 'code-timeline.svg';
+      link.href = url;
+      link.click();
+      
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting as SVG:', error);
+    }
+  }
 
   const handleScroll = () => {
     if (!timelineContainerRef.current) return;
@@ -249,16 +453,48 @@ const CodeTimeline = () => {
             <Github className="w-4 h-4" />
           </a>
 
-          <button
-            onClick={downloadImage}
-            className={`p-2 rounded-full ${
-              darkMode
-                ? "bg-gray-700 hover:bg-gray-600 text-gray-200"
-                : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-            }`}
-          >
-            <Download className="w-4 h-4" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${
+                darkMode
+                  ? "hover:bg-gray-700 text-gray-300"
+                  : "hover:bg-gray-100 text-gray-700"
+              }`}
+              title="Export timeline"
+            >
+              <Download size={20} />
+              <ChevronDown size={16} />
+            </button>
+            
+            {showExportMenu && (
+              <div 
+                className={`absolute right-0 mt-2 py-2 w-48 rounded-lg shadow-lg ${
+                  darkMode 
+                    ? "bg-gray-800 border border-gray-700" 
+                    : "bg-white border border-gray-200"
+                }`}
+                style={{ zIndex: 9999 }}
+              >
+                {exportFormats.map(format => (
+                  <button
+                    key={format.id}
+                    onClick={() => {
+                      format.handler();
+                      setShowExportMenu(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm ${
+                      darkMode
+                        ? "hover:bg-gray-700 text-gray-300"
+                        : "hover:bg-gray-100 text-gray-700"
+                    }`}
+                  >
+                    {format.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <FileUpload 
             onFileContent={handleCodeInput}
