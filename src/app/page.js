@@ -11,6 +11,7 @@ import { TimelineControls } from "@/components/ui/timeline-controls";
 import { FilterDialog } from "@/components/ui/filter-dialog";
 import { MiniMap } from "@/components/ui/mini-map";
 import { FileUpload } from "@/components/ui/file-upload";
+import { DiffModal } from "@/components/ui/diff-modal";
 import jsPDF from 'jspdf';
 
 import "ace-builds/src-noconflict/mode-dart";
@@ -45,6 +46,8 @@ const CodeTimeline = () => {
   const [tooltipPosition, setTooltipPosition] = useState({ top: true });
   const [tooltipVisible, setTooltipVisible] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [selectedSegment, setSelectedSegment] = useState(null);
+  const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
 
   const timelineRef = useRef(null);
   const timelineContainerRef = useRef(null);
@@ -661,6 +664,21 @@ const CodeTimeline = () => {
                                 width: `${segment.width}px`,
                                 cursor: 'pointer'
                               }}
+                              onClick={() => {
+                                setSelectedSegment({
+                                  ...segment,
+                                  complexity: analysis.complexity,
+                                  codeSmells: analysis.codeSmells,
+                                  line: row.id,
+                                  position: segIndex + 1,
+                                  context: timelineData[row.id - 2]?.segments.map(s => s.text).join('') + '\n' +
+                                          timelineData[row.id - 1]?.segments.map(s => s.text).join('') + '\n' +
+                                          timelineData[row.id]?.segments.map(s => s.text).join('') + '\n' +
+                                          timelineData[row.id + 1]?.segments.map(s => s.text).join('') + '\n' +
+                                          timelineData[row.id + 2]?.segments.map(s => s.text).join('')
+                                });
+                                setIsDiffModalOpen(true);
+                              }}
                               onMouseEnter={(e) => {
                                 const tooltip = e.currentTarget.nextElementSibling;
                                 if (tooltip) {
@@ -803,6 +821,12 @@ const CodeTimeline = () => {
         onClose={() => setIsFilterOpen(false)}
         onApply={handleFilterChange}
         filters={filters}
+        darkMode={darkMode}
+      />
+      <DiffModal
+        isOpen={isDiffModalOpen}
+        onClose={() => setIsDiffModalOpen(false)}
+        segment={selectedSegment}
         darkMode={darkMode}
       />
     </div>
