@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { Download, Github, BarChart2, MinusCircle, PlusCircle, Activity, ChevronDown, Sun, Moon, History, Trash2, X, Share2, AlertTriangle, Filter } from "lucide-react";
 import html2canvas from "html2canvas";
 import AceEditor from "react-ace";
-import { validateCodeInput, parseCodeChanges } from "@/lib/utils";
+import { validateCodeInput } from "@/lib/utils";
 import jsPDF from 'jspdf';
 
 import "ace-builds/src-noconflict/mode-dart";
@@ -24,6 +24,7 @@ const CodeTimeline = () => {
   const [darkMode, setDarkMode] = useState(false);
   const [codeInput, setCodeInput] = useState('');
   const [timelineData, setTimelineData] = useState([]);
+  const [filteredTimelineData, setFilteredTimelineData] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [error, setError] = useState(null);
   const [showComplexity, setShowComplexity] = useState(false);
@@ -194,18 +195,26 @@ const CodeTimeline = () => {
     addToHistory(codeInput, 'deleted');
   }, [codeInput]);
 
-  const handleCodeInput = (newValue) => {
-    setCodeInput(newValue);
-    const lines = newValue.split('\n');
-    const newTimelineData = lines.map((line, index) => {
-      const segments = tokenizeLine(line);
-      return {
-        id: index + 1,
-        segments: segments
-      };
-    });
-    setTimelineData(newTimelineData);
-  };
+  const parseCodeChanges = useCallback((code) => {
+    if (!code) return [];
+    
+    const lines = code.split('\n');
+    return lines.map((line, index) => ({
+      id: index + 1,
+      segments: tokenizeLine(line)
+    }));
+  }, []);
+
+  const handleCodeInput = useCallback((value) => {
+    setCodeInput(value);
+    try {
+      const parsedData = parseCodeChanges(value);
+      setTimelineData(parsedData);
+      setFilteredTimelineData(parsedData);
+    } catch (err) {
+      console.error('Error parsing code:', err);
+    }
+  }, []);
 
   const tokenizeLine = (line) => {
     if (!line.trim()) {
@@ -369,7 +378,7 @@ const CodeTimeline = () => {
   };
 
   // Filter timeline data based on search term and filters
-  const filteredTimelineData = useMemo(() => {
+  const filteredTimelineDataMemo = useMemo(() => {
     if (!timelineData || !Array.isArray(timelineData)) return [];
     
     return timelineData
@@ -419,26 +428,35 @@ const CodeTimeline = () => {
   };
 
   const handleFileUpload = useCallback((event) => {
-    const file = event.target.files?.[0];
+    const file = event.target.files[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      const content = e.target?.result;
-      if (typeof content === 'string') {
+      try {
+        const content = e.target.result;
         setCodeInput(content);
-        const newTimelineData = handleCodeInput(content);
-        setTimelineData(newTimelineData);
-        localStorage.setItem('timelineData', JSON.stringify(newTimelineData));
+        const parsedData = parseCodeChanges(content);
+        setTimelineData(parsedData);
+        setFilteredTimelineData(parsedData);
+        // Reset scroll position
+        if (timelineRef.current) {
+          timelineRef.current.scrollTop = 0;
+        }
+      } catch (err) {
+        setError(`Error reading file: ${err.message}`);
       }
+    };
+    reader.onerror = () => {
+      setError('Error reading file');
     };
     reader.readAsText(file);
   }, []);
 
-  const handleScroll = () => {
-    if (!timelineContainerRef.current) return;
+  const handleScroll = useCallback(() => {
+    if (!timelineRef.current || !timelineData) return;
     
-    const container = timelineContainerRef.current;
+    const container = timelineRef.current;
     const { scrollTop, clientHeight, scrollHeight } = container;
     
     // Calculate visible lines based on scroll position and container height
@@ -446,10 +464,10 @@ const CodeTimeline = () => {
     const lineHeight = scrollHeight / totalLines;
     
     const start = Math.floor(scrollTop / lineHeight);
-    const end = Math.min(Math.ceil((scrollTop + clientHeight) / lineHeight), totalLines);
+    const end = Math.ceil((scrollTop + clientHeight) / lineHeight);
     
     setVisibleRange({ start, end });
-  };
+  }, [timelineData]);
 
   const handleTooltipPosition = (e, tooltip) => {
     const rect = tooltip.getBoundingClientRect();
@@ -478,7 +496,7 @@ const CodeTimeline = () => {
       handleScroll();
       return () => container.removeEventListener('scroll', handleScroll);
     }
-  }, [timelineData.length]);
+  }, [timelineData?.length]);
 
   useEffect(() => {
     handleScroll();
@@ -920,7 +938,7 @@ const CodeTimeline = () => {
                   className={`rounded-lg shadow-sm h-full ${
                     darkMode
                       ? "border border-gray-700"
-                      : "border border-gray-200"
+                      : "border border-gray-300"
                   }`}
                   setOptions={{
                     showLineNumbers: true,
@@ -941,12 +959,12 @@ const CodeTimeline = () => {
                   className="timeline-container w-full h-full p-4 rounded-lg border overflow-y-auto"
                   style={{
                     background: darkMode ? theme.background : 'white',
-                    borderColor: darkMode ? theme.border : theme.border,
+                    borderColor: darkMode ? theme.border : '#e2e8f0',
                     scrollBehavior: 'smooth'
                   }}
                 >
                   <div className="space-y-1">
-                    {filteredTimelineData.map((row) => {
+                    {filteredTimelineDataMemo.map((row) => {
                       const analysis = analyzeCodeSegment(row.segments.map(s => s.text).join(''));
                       return (
                         <div
@@ -1007,7 +1025,7 @@ const CodeTimeline = () => {
                 className={`mt-4 p-4 rounded-lg border ${
                   darkMode
                     ? "bg-gray-800 border-gray-700"
-                    : "bg-white border border-gray-200 shadow-sm"
+                    : "bg-white border border-gray-300 shadow-sm"
                 }`}
               >
                 <div className="flex flex-wrap gap-3 text-xs">
