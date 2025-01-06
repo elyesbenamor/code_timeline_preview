@@ -960,12 +960,10 @@ const CodeTimeline = () => {
           </div>
 
           {error && (
-            <Alert
-              type="error"
-              message={error}
-              onClose={() => setError(null)}
-              className="mb-4"
-            />
+            <div className="flex items-center justify-center p-4 text-yellow-600">
+              <AlertTriangle className="w-5 h-5 mr-2" />
+              <span>No code changes detected. Please input some code to analyze.</span>
+            </div>
           )}
 
           <div className="flex gap-6 h-[calc(100vh-8rem)]">

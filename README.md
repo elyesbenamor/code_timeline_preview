@@ -96,6 +96,77 @@ npm run dev
    - Zoom in/out to adjust detail level
    - Scroll through longer code files
 
+## 🐳 Docker Setup
+
+You can run the application using Docker. Here's how:
+
+### Prerequisites
+
+- Docker installed on your machine
+- Docker Compose (optional, for development)
+
+### Building the Docker Image
+
+```bash
+# Build the image
+docker build -t code-timeline . --load 
+```
+
+### Running the Container
+
+```bash
+# Run the container
+docker run -p 3000:3000 code-timeline
+```
+
+The application will be available at `http://localhost:3000`
+
+### Development with Docker
+
+For development, you can use volume mounts to reflect changes immediately:
+
+```bash
+docker run -p 3000:3000 -v $(pwd):/app code-timeline npm run dev
+```
+
+### Docker Commands Reference
+
+```bash
+# Stop the container
+docker stop <container_id>
+
+# Remove the container
+docker rm <container_id>
+
+# List running containers
+docker ps
+
+# View container logs
+docker logs <container_id>
+
+# Rebuild the image after changes
+docker build -t code-timeline . --load
+```
+
+### Troubleshooting
+
+If you encounter any issues:
+
+1. Make sure ports are not in use:
+   ```bash
+   lsof -i :3000
+   ```
+
+2. Clean up Docker resources:
+   ```bash
+   docker system prune
+   ```
+
+3. Check container logs:
+   ```bash
+   docker logs <container_id>
+   ```
+
 ## Technologies
 
 - **Frontend**: Next.js, React
